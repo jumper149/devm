@@ -46,6 +46,8 @@ common language
 common dependencies
   build-depends:
     , base
+    , mcp-server
+    , text
 
 library
   import:

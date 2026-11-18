@@ -119,31 +119,18 @@
     };
 
   overlays.default = final: prev: {
-    haskellPackages = prev.haskellPackages.extend (haskellFinal: haskellPrev:
+    haskellPackages = prev.haskell.packages.ghc9124.extend (haskellFinal: haskellPrev:
     let
       source = {
-        selda = prev.fetchFromGitHub {
+        mcp-server = prev.fetchFromGitHub {
           owner  = "jumper149";
-          repo   = "selda-teto";
-          rev    = "8d3bd2e5b9a21116c2e39668153a261f9de1467c";
-          sha256 = "sha256-nPMt+uhBT+BX5G7uZVCaPi/dftkIXrIkfZk013bZ6Do=";
-        };
-        wai-control = prev.fetchFromGitHub {
-          owner  = "jumper149";
-          repo   = "wai-control";
-          rev    = "829c252c284e1153fc60b8a4358185d9d932959b";
-          sha256 = "sha256-2lFwVyeF45x1PO1VKjbJJdR3Q6QTArcqxgURjT8Khmc=";
+          repo   = "haskell-mcp-server";
+          rev    = "2143eb677063a5fc38bd478a05779ee6267a8c83";
+          sha256 = "sha256-F1ChL7PklK01nAL30RaY55qX5JsR9jHolBlwmntJ9oQ=";
         };
       };
     in {
-      selda = haskellPrev.callCabal2nix "selda" (source.selda.outPath + "/selda") {};
-      selda-sqlite = haskellPrev.callCabal2nix "selda-sqlite" (source.selda.outPath + "/selda-sqlite") {};
-      tzdata = haskellPrev.callHackageDirect {
-        pkg = "tzdata";
-        ver = "0.2.20240201.0";
-        sha256 = "sha256-cN4SiPNS6Be5TYNfqW93pa5cGG+AxVCkI5dx+S8agrU=";
-      } {};
-      wai-control = haskellPrev.callCabal2nix "wai-control" source.wai-control.outPath {};
+      mcp-server = haskellPrev.callCabal2nix "mcp-server" source.mcp-server.outPath {};
     });
   };
 
