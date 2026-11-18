@@ -119,7 +119,7 @@
     };
 
   overlays.default = final: prev: {
-    haskellPackages = prev.haskell.packages.ghc9124.extend (haskellFinal: haskellPrev:
+    haskellPackages = prev.haskellPackages.extend (haskellFinal: haskellPrev:
     let
       source = {
         mcp-server = prev.fetchFromGitHub {
