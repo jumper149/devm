@@ -1,0 +1,7 @@
+cradle:
+  cabal:
+    - path: "source/library"
+      component: "lib:devm"
+
+    - path: "source/executable/server/Main.hs"
+      component: "devm:exe:devm-server"

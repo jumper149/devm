@@ -1,0 +1,67 @@
+cabal-version: 3.6
+name: devm
+version: 0
+
+flag cabal2nix
+  default: False
+
+common language
+  default-language: GHC2024
+  default-extensions:
+    DeriveAnyClass
+    DerivingVia
+    FunctionalDependencies
+    LexicalNegation
+    NumDecimals
+    OverloadedStrings
+    TypeAbstractions
+    TypeData
+    TypeFamilies
+  ghc-options:
+    -Weverything
+    -Wno-all-missed-specialisations
+    -Wno-implicit-prelude
+    -Wno-missed-specialisations
+    -Wno-missing-export-lists
+    -Wno-missing-import-lists
+    -Wno-missing-safe-haskell-mode
+    -Wno-unsafe
+    -Wno-unticked-promoted-constructors
+  if flag(cabal2nix)
+    ghc-options:
+      -O1
+      -Werror
+  else
+    ghc-options:
+      -fdefer-typed-holes
+        -- ^ Recognize typed holes.
+      -funclutter-valid-hole-fits
+        -- ^ Reduce verbosity of typed holes.
+      -fwrite-ide-info
+        -- ^ Generate data for 'weeder'.
+      -O0
+      -Wtyped-holes
+        -- ^ Turn typed holes into warnings instead of errors.
+
+common dependencies
+  build-depends:
+    , base
+
+library
+  import:
+    , dependencies
+    , language
+  exposed-modules:
+    , Devm.Server.Main
+  hs-source-dirs: source/library
+
+executable devm-server
+  build-depends:
+    , devm
+  main-is: Main.hs
+  hs-source-dirs: source/executable/server
+  default-language: GHC2021
+  default-extensions:
+    NoImplicitPrelude
+  ghc-options:
+    -threaded

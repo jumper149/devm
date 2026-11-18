@@ -1,54 +1,111 @@
 {
-  description = "devm: disposable Firecracker microVMs for untrusted local repos";
+  description = "Devm";
 
   inputs = {
     nixpkgs = {
       type = "github";
       owner = "NixOS";
       repo = "nixpkgs";
-      ref = "nixos-unstable";
+      ref = "nixpkgs-unstable";
     };
-    microvm = {
+    weeder-nix = {
       type = "github";
-      owner = "microvm-nix";
-      repo = "microvm.nix";
-      ref = "main";
+      owner = "NorfairKing";
+      repo = "weeder-nix";
+      ref = "master";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    nix-github-actions = {
+      type = "github";
+      owner = "nix-community";
+      repo = "nix-github-actions";
+      ref = "master";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
-  outputs = { self, nixpkgs, microvm }:
-    let
-      systems = [ "x86_64-linux" "aarch64-linux" ];
-      forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f system);
-      pkgsFor = system: import nixpkgs { inherit system; };
-    in
-    {
-      nixosModules.devm = import ./modules/devm.nix { inherit microvm; };
-      nixosModules.default = self.nixosModules.devm;
+  outputs = { self, nixpkgs, weeder-nix, nix-github-actions }: {
 
-      packages = forAllSystems (system:
-        let pkgs = pkgsFor system; in {
-          devm = pkgs.callPackage ./pkgs/devm.nix { };
-        });
+    subflakes =
+      let
+        importSubflake = path: inputs: subflakeInputs:
+          import path (inputs // { self = (if self ? rev then { inherit (self) rev; } else { }) // { subflakes = subflakeInputs; }; });
+      in rec {
+          setup = importSubflake ./setup/subflake.nix { inherit nixpkgs; } { };
+          server = importSubflake ./server/subflake.nix { inherit nixpkgs weeder-nix; } { inherit setup; };
+          final = importSubflake ./final/subflake.nix { inherit nixpkgs; } { inherit setup server; };
+        };
 
-      # Evaluation-only demo host. Replace the interface/keys before deploying.
-      nixosConfigurations.devm-demo = nixpkgs.lib.nixosSystem {
-        system = "x86_64-linux";
-        modules = [
-          self.nixosModules.devm
-          {
-            system.stateVersion = "24.11";
-            networking.hostName = "devm-demo";
-            devm = {
-              enable = true;
-              uplinkInterface = "eth0";
-              authorizedKeys = [
-                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemoOnlyReplaceMe devm-demo"
-              ];
-            };
-          }
+    packages.x86_64-linux.default = self.subflakes.final.packages.x86_64-linux.default;
+
+    overlays.default = self.subflakes.final.overlays.default;
+
+    devShells.x86_64-linux.default =
+      with import nixpkgs { system = "x86_64-linux"; overlays = [ self.subflakes.setup.overlays.default ]; };
+      let
+        additionalBuildInputs = [
+          pkgs.curl
+          pkgs.jq
+          pkgs.nil
         ];
+        shells =
+          let
+            hasDevShells = name: value: __elem "devShells" (__attrNames value) && __elem "x86_64-linux" (__attrNames value.devShells);
+            subflakesWithDevShells = lib.filterAttrs hasDevShells self.subflakes;
+            devShellsBySubflake = __mapAttrs (name: value: value.devShells.x86_64-linux) subflakesWithDevShells;
+            devShells = __foldl' (a: b: a ++ b) [ ] (map __attrValues (__attrValues devShellsBySubflake));
+          in devShells;
+        fullBuildInputs = __concatMap (x: x.buildInputs) shells;
+        fullNativeBuildInputs = __concatMap (x: x.nativeBuildInputs) shells;
+        fullShellHook = __concatStringsSep "\n" (map (x: x.shellHook) shells);
+      in stdenv.mkDerivation {
+        name = "devm-development"; # TODO: Necessary to avoid segmentation fault.
+        src = ./.;
+        installPhase = "touch $out";
+        buildInputs = fullBuildInputs ++ additionalBuildInputs;
+        nativeBuildInputs = fullNativeBuildInputs;
+        shellHook = fullShellHook;
       };
-    };
+
+    checks.x86_64-linux =
+      with import nixpkgs { system = "x86_64-linux"; overlays = [ self.subflakes.setup.overlays.default ]; };
+      let
+        hasChecks = name: value: __elem "checks" (__attrNames value) && __elem "x86_64-linux" (__attrNames value.checks);
+        checkableSubflakes = lib.filterAttrs hasChecks self.subflakes;
+        checksBySubflake =
+          __mapAttrs (nameSubflake: valueSubflake:
+            lib.mapAttrs' (nameCheck: valueCheck:
+              lib.nameValuePair
+                ("subflake" + "-" + nameSubflake + "-" + nameCheck)
+                valueCheck
+            ) valueSubflake.checks.x86_64-linux
+          ) checkableSubflakes;
+        checks = __foldl' (a: b: a // b) { } (__attrValues checksBySubflake);
+      in checks;
+
+    githubActions =
+      with import nixpkgs { system = "x86_64-linux"; overlays = [ self.subflakes.setup.overlays.default ]; };
+      let
+        generated =
+          nix-github-actions.lib.mkGithubMatrix {
+            checks = self.checks;
+          };
+      in {
+        checks = generated.checks;
+        matrix = {
+          include =
+            let
+              isBrokenCheck = matrix: false;
+              removeBrokenChecks = __filter (matrix: ! isBrokenCheck matrix);
+              requiresSandboxFalse = matrix: false;
+              setSandboxField = matrix:
+                if requiresSandboxFalse matrix
+                then matrix // { sandbox = false; }
+                else matrix // { sandbox = true; };
+              setSandboxFields = map setSandboxField;
+            in setSandboxFields (removeBrokenChecks generated.matrix.include);
+        };
+      };
+
+  };
 }
