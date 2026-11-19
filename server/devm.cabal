@@ -47,6 +47,7 @@ common dependencies
   build-depends:
     , base
     , mcp-server
+    , stm
     , text
 
 library
