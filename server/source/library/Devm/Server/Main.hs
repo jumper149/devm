@@ -32,6 +32,7 @@ data RunningVM = MkRunningVM
   , vmProcess :: Process.ProcessHandle
   , vmInput :: IO.Handle
   , vmOutput :: IO.Handle
+  , vmError :: IO.Handle
   }
 
 runningToken :: RunningVM -> Unique.Unique
@@ -45,6 +46,9 @@ runningInput MkRunningVM {vmInput} = vmInput
 
 runningOutput :: RunningVM -> IO.Handle
 runningOutput MkRunningVM {vmOutput} = vmOutput
+
+runningError :: RunningVM -> IO.Handle
+runningError MkRunningVM {vmError} = vmError
 
 type VMLock :: Type
 data VMLock = VMisFreeToUse | VMisStarting | VMisAlreadyInUse RunningVM
@@ -86,11 +90,11 @@ startVM (MkVMExecutable path) = do
       (Process.proc (Text.unpack path) [])
         { Process.std_in = Process.CreatePipe
         , Process.std_out = Process.CreatePipe
-        , Process.std_err = Process.Inherit
+        , Process.std_err = Process.CreatePipe
         }
   case created of
-    (Just vmInput, Just vmOutput, _, vmProcess) ->
-      pure MkRunningVM {vmToken = token, vmProcess, vmInput, vmOutput}
+    (Just vmInput, Just vmOutput, Just vmError, vmProcess) ->
+      pure MkRunningVM {vmToken = token, vmProcess, vmInput, vmOutput, vmError}
     _ ->
       Exception.throwIO $ IOError.userError "Could not create pipes for the VM executable."
 
@@ -99,6 +103,7 @@ monitorVM vms identifier running = do
   _ <- Process.waitForProcess (runningProcess running)
   IO.hClose (runningInput running)
   IO.hClose (runningOutput running)
+  IO.hClose (runningError running)
   STM.atomically $ do
     pool <- STM.readTVar vms
     case lookupVMLock pool identifier of
@@ -192,6 +197,7 @@ handleTool MkHandlerEnvironment {vms, executables = MkVMExecutables {unVMExecuta
         Process.terminateProcess (runningProcess running)
         IO.hClose (runningInput running)
         IO.hClose (runningOutput running)
+        IO.hClose (runningError running)
         pure $ MCP.Server.ContentText "Destroyed"
 
 info :: MCP.Server.McpServerInfo
