@@ -26,6 +26,9 @@ data VMLock = VMisFreeToUse | VMisAlreadyInUse
 type VMExecutable :: Type
 data VMExecutable = MkVMExecutable Text.Text
 
+type VMExecutables :: Type
+data VMExecutables = MkVMExecutables {unVMExecutables :: Map.Map VMID VMExecutable}
+
 type VMPool :: Type
 newtype VMPool = MkVMPool {unVMPool :: Map.Map VMID VMLock}
 
@@ -48,8 +51,9 @@ unlockVM :: VMID -> VMPool -> VMPool
 unlockVM identifier (MkVMPool pool) = MkVMPool $ Map.insert identifier VMisFreeToUse pool
 
 type HandlerEnvironment :: Type
-newtype HandlerEnvironment = MkHandlerEnvironment
+data HandlerEnvironment = MkHandlerEnvironment
   { vms :: STM.TVar VMPool
+  , executables :: VMExecutables
   }
 
 type RequestCreate :: Type
@@ -101,12 +105,12 @@ info =
 
 type CommandLine :: Type
 data CommandLine = MkCommandLine
-  { vmExecutables :: Map.Map VMID VMExecutable
+  { cliVMExecutables :: VMExecutables
   }
 
 commandLineParser :: Opt.Parser CommandLine
 commandLineParser =
-  MkCommandLine . Map.fromList . zip (MkVMID <$> [1 ..])
+  MkCommandLine . MkVMExecutables . Map.fromList . zip (MkVMID <$> [1 ..])
     <$> Opt.some
       ( MkVMExecutable
           <$> Opt.strOption
@@ -127,8 +131,8 @@ $(pure [])
 
 main :: IO ()
 main = do
-  MkCommandLine {vmExecutables} <- Opt.execParser commandLineParserInfo
-  vms <- initializeVMPool $ Map.keys vmExecutables
+  MkCommandLine {cliVMExecutables = executables@(MkVMExecutables {unVMExecutables = executablesMap})} <- Opt.execParser commandLineParserInfo
+  vms <- initializeVMPool $ Map.keys executablesMap
   let environment = MkHandlerEnvironment {..}
   let tool = handleTool environment
   let handlers = MCP.Server.noHandlers {MCP.Server.tools = Just $(MCP.Server.Derive.deriveToolHandler ''Tool 'tool)}
