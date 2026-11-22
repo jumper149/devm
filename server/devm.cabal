@@ -58,7 +58,11 @@ library
     , dependencies
     , language
   exposed-modules:
+    , Devm.Server.CommandLine
     , Devm.Server.Main
+    , Devm.Server.Tools
+    , Devm.Server.VM
+    , Devm.Server.VM.Process
   hs-source-dirs: source/library
 
 executable devm-server
