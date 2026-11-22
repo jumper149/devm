@@ -75,3 +75,4 @@ executable devm-server
     NoImplicitPrelude
   ghc-options:
     -threaded
+    -with-rtsopts=-N
