@@ -19,6 +19,7 @@ type HandlerEnvironment :: Type
 data HandlerEnvironment = MkHandlerEnvironment
   { vms :: STM.TVar VMPool
   , executables :: VMExecutables
+  , readyMarker :: Text.Text
   }
 
 type RequestCreate :: Type
@@ -45,7 +46,7 @@ data Tool
   | Destroy RequestDestroy
 
 handleTool :: HandlerEnvironment -> MCP.Server.ClientContext -> Tool -> IO MCP.Server.Content
-handleTool MkHandlerEnvironment {vms, executables = MkVMExecutables {unVMExecutables = executableMap}} _ctx = \case
+handleTool MkHandlerEnvironment {vms, executables = MkVMExecutables {unVMExecutables = executableMap}, readyMarker} _ctx = \case
   Create MkRequestCreate {identifier} ->
     case Map.lookup identifier executableMap of
       Nothing ->
@@ -67,6 +68,8 @@ handleTool MkHandlerEnvironment {vms, executables = MkVMExecutables {unVMExecuta
                 `Exception.onException` STM.atomically (STM.modifyTVar' vms (unlockVM identifier))
             STM.atomically $ STM.modifyTVar' vms (setVMLock identifier (VMisAlreadyInUse running))
             _ <- Concurrent.forkIO $ VMProcess.monitorVM vms identifier running
+            _ <- Concurrent.forkIO $ VMProcess.forwardStartup identifier readyMarker running
+            _ <- Concurrent.forkIO $ VMProcess.discardOutput (runningError running)
             pure $ MCP.Server.ContentText $ "You are now using ID: " <> displayVMID identifier
   Command MkRequestCommand {identifier, command} -> do
     mRunning <- STM.atomically $ do
@@ -81,8 +84,7 @@ handleTool MkHandlerEnvironment {vms, executables = MkVMExecutables {unVMExecuta
       Just running -> do
         IO.hPutStrLn (runningInput running) (Text.unpack command)
         IO.hFlush (runningInput running)
-        response <- IO.hGetLine (runningOutput running)
-        pure $ MCP.Server.ContentText $ Text.pack response
+        pure $ MCP.Server.ContentText "Commanded"
   Destroy MkRequestDestroy {identifier} -> do
     mRunning <- STM.atomically $ do
       pool <- STM.readTVar vms

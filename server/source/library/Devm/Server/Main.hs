@@ -23,7 +23,7 @@ $(pure [])
 
 main :: IO ()
 main = do
-  MkCommandLine {cliVMExecutables = executables@(MkVMExecutables {unVMExecutables = executablesMap})} <- Opt.execParser commandLineParserInfo
+  MkCommandLine {cliVMExecutables = executables@(MkVMExecutables {unVMExecutables = executablesMap}), cliReadyMarker = readyMarker} <- Opt.execParser commandLineParserInfo
   vms <- initializeVMPool $ Map.keys executablesMap
   let environment = MkHandlerEnvironment {..}
   let tool = handleTool environment

@@ -2,6 +2,7 @@ module Devm.Server.VM.Process where
 
 import Control.Concurrent.STM qualified as STM
 import Control.Exception qualified as Exception
+import Control.Monad qualified as Monad
 import Data.Text qualified as Text
 import Data.Unique qualified as Unique
 import Devm.Server.VM
@@ -29,8 +30,6 @@ monitorVM :: STM.TVar VMPool -> VMID -> RunningVM -> IO ()
 monitorVM vms identifier running = do
   _ <- Process.waitForProcess (runningProcess running)
   IO.hClose (runningInput running)
-  IO.hClose (runningOutput running)
-  IO.hClose (runningError running)
   STM.atomically $ do
     pool <- STM.readTVar vms
     case lookupVMLock pool identifier of
@@ -39,3 +38,45 @@ monitorVM vms identifier running = do
             STM.writeTVar vms $ unlockVM identifier pool
       _ ->
         pure ()
+
+forwardStartup :: VMID -> Text.Text -> RunningVM -> IO ()
+forwardStartup identifier marker running =
+  go True `Exception.catch` ignoreIOError
+ where
+  prefix :: String
+  prefix = "[vm " <> Text.unpack (displayVMID identifier) <> "] "
+
+  handle :: IO.Handle
+  handle = runningOutput running
+
+  go :: Bool -> IO ()
+  go logging = do
+    eof <- IO.hIsEOF handle
+    if eof
+      then IO.hClose handle
+      else do
+        line <- IO.hGetLine handle
+        let lineText = Text.pack line
+        if logging && not (Text.null marker) && marker `Text.isInfixOf` lineText
+          then do
+            IO.putStrLn $ prefix <> line
+            go False
+          else do
+            Monad.when logging $ IO.putStrLn $ prefix <> line
+            go logging
+
+discardOutput :: IO.Handle -> IO ()
+discardOutput handle =
+  go `Exception.catch` ignoreIOError
+ where
+  go :: IO ()
+  go = do
+    eof <- IO.hIsEOF handle
+    if eof
+      then IO.hClose handle
+      else do
+        _ <- IO.hGetLine handle
+        go
+
+ignoreIOError :: Exception.IOException -> IO ()
+ignoreIOError _ = pure ()
