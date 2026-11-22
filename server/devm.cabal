@@ -46,7 +46,9 @@ common language
 common dependencies
   build-depends:
     , base
+    , containers
     , mcp-server
+    , optparse-applicative
     , stm
     , text
 
