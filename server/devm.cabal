@@ -49,6 +49,7 @@ common dependencies
     , containers
     , mcp-server
     , optparse-applicative
+    , process
     , stm
     , text
 

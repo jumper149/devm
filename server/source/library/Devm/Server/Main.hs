@@ -5,13 +5,19 @@
 
 module Devm.Server.Main where
 
+import Control.Concurrent qualified as Concurrent
 import Control.Concurrent.STM qualified as STM
+import Control.Exception qualified as Exception
 import Data.Kind
 import Data.Map qualified as Map
 import Data.Text qualified as Text
+import Data.Unique qualified as Unique
 import MCP.Server qualified
 import MCP.Server.Derive qualified
 import Options.Applicative qualified as Opt
+import System.IO qualified as IO
+import System.IO.Error qualified as IOError
+import System.Process qualified as Process
 
 type VMID :: Type
 data VMID = MkVMID Int
@@ -20,8 +26,28 @@ data VMID = MkVMID Int
 displayVMID :: VMID -> Text.Text
 displayVMID (MkVMID vmID) = Text.pack $ show vmID
 
+type RunningVM :: Type
+data RunningVM = MkRunningVM
+  { vmToken :: Unique.Unique
+  , vmProcess :: Process.ProcessHandle
+  , vmInput :: IO.Handle
+  , vmOutput :: IO.Handle
+  }
+
+runningToken :: RunningVM -> Unique.Unique
+runningToken MkRunningVM {vmToken} = vmToken
+
+runningProcess :: RunningVM -> Process.ProcessHandle
+runningProcess MkRunningVM {vmProcess} = vmProcess
+
+runningInput :: RunningVM -> IO.Handle
+runningInput MkRunningVM {vmInput} = vmInput
+
+runningOutput :: RunningVM -> IO.Handle
+runningOutput MkRunningVM {vmOutput} = vmOutput
+
 type VMLock :: Type
-data VMLock = VMisFreeToUse | VMisAlreadyInUse
+data VMLock = VMisFreeToUse | VMisStarting | VMisAlreadyInUse RunningVM
 
 type VMExecutable :: Type
 data VMExecutable = MkVMExecutable Text.Text
@@ -44,11 +70,43 @@ lookupVMLock :: VMPool -> VMID -> Maybe VMLock
 lookupVMLock MkVMPool {unVMPool} identifier =
   Map.lookup identifier unVMPool
 
-lockVM :: VMID -> VMPool -> VMPool
-lockVM identifier (MkVMPool pool) = MkVMPool $ Map.insert identifier VMisAlreadyInUse pool
+setVMLock :: VMID -> VMLock -> VMPool -> VMPool
+setVMLock identifier lock (MkVMPool pool) =
+  MkVMPool $ Map.insert identifier lock pool
 
 unlockVM :: VMID -> VMPool -> VMPool
-unlockVM identifier (MkVMPool pool) = MkVMPool $ Map.insert identifier VMisFreeToUse pool
+unlockVM identifier (MkVMPool pool) =
+  MkVMPool $ Map.insert identifier VMisFreeToUse pool
+
+startVM :: VMExecutable -> IO RunningVM
+startVM (MkVMExecutable path) = do
+  token <- Unique.newUnique
+  created <-
+    Process.createProcess $
+      (Process.proc (Text.unpack path) [])
+        { Process.std_in = Process.CreatePipe
+        , Process.std_out = Process.CreatePipe
+        , Process.std_err = Process.Inherit
+        }
+  case created of
+    (Just vmInput, Just vmOutput, _, vmProcess) ->
+      pure MkRunningVM {vmToken = token, vmProcess, vmInput, vmOutput}
+    _ ->
+      Exception.throwIO $ IOError.userError "Could not create pipes for the VM executable."
+
+monitorVM :: STM.TVar VMPool -> VMID -> RunningVM -> IO ()
+monitorVM vms identifier running = do
+  _ <- Process.waitForProcess (runningProcess running)
+  IO.hClose (runningInput running)
+  IO.hClose (runningOutput running)
+  STM.atomically $ do
+    pool <- STM.readTVar vms
+    case lookupVMLock pool identifier of
+      Just (VMisAlreadyInUse current)
+        | runningToken current == runningToken running ->
+            STM.writeTVar vms $ unlockVM identifier pool
+      _ ->
+        pure ()
 
 type HandlerEnvironment :: Type
 data HandlerEnvironment = MkHandlerEnvironment
@@ -80,20 +138,61 @@ data Tool
   | Destroy RequestDestroy
 
 handleTool :: HandlerEnvironment -> MCP.Server.ClientContext -> Tool -> IO MCP.Server.Content
-handleTool MkHandlerEnvironment {vms} _ctx = \case
-  Create MkRequestCreate {identifier} -> do
-    STM.atomically $ do
+handleTool MkHandlerEnvironment {vms, executables = MkVMExecutables {unVMExecutables = executableMap}} _ctx = \case
+  Create MkRequestCreate {identifier} ->
+    case Map.lookup identifier executableMap of
+      Nothing ->
+        pure $ MCP.Server.ContentText "ID does not exist."
+      Just executable -> do
+        reserved <- STM.atomically $ do
+          pool <- STM.readTVar vms
+          case lookupVMLock pool identifier of
+            Just VMisFreeToUse -> do
+              STM.writeTVar vms $ setVMLock identifier VMisStarting pool
+              pure True
+            _ ->
+              pure False
+        if not reserved
+          then pure $ MCP.Server.ContentText "ID is already in use."
+          else do
+            running <-
+              startVM executable
+                `Exception.onException` STM.atomically (STM.modifyTVar' vms (unlockVM identifier))
+            STM.atomically $ STM.modifyTVar' vms (setVMLock identifier (VMisAlreadyInUse running))
+            _ <- Concurrent.forkIO $ monitorVM vms identifier running
+            pure $ MCP.Server.ContentText $ "You are now using ID: " <> displayVMID identifier
+  Command MkRequestCommand {identifier, command} -> do
+    mRunning <- STM.atomically $ do
+      pool <- STM.readTVar vms
+      pure $
+        case lookupVMLock pool identifier of
+          Just (VMisAlreadyInUse running) -> Just running
+          _ -> Nothing
+    case mRunning of
+      Nothing ->
+        pure $ MCP.Server.ContentText "ID is not in use."
+      Just running -> do
+        IO.hPutStrLn (runningInput running) (Text.unpack command)
+        IO.hFlush (runningInput running)
+        response <- IO.hGetLine (runningOutput running)
+        pure $ MCP.Server.ContentText $ Text.pack response
+  Destroy MkRequestDestroy {identifier} -> do
+    mRunning <- STM.atomically $ do
       pool <- STM.readTVar vms
       case lookupVMLock pool identifier of
-        Nothing ->
-          pure $ MCP.Server.ContentText "ID does not exist."
-        Just VMisFreeToUse -> do
-          STM.writeTVar vms $ lockVM identifier pool
-          pure $ MCP.Server.ContentText $ "You are now using ID: " <> displayVMID identifier
-        Just VMisAlreadyInUse ->
-          pure $ MCP.Server.ContentText "ID is already in use."
-  Command MkRequestCommand {} -> pure $ MCP.Server.ContentText "Commanded"
-  Destroy MkRequestDestroy {} -> pure $ MCP.Server.ContentText "Destroyed"
+        Just (VMisAlreadyInUse running) -> do
+          STM.writeTVar vms $ unlockVM identifier pool
+          pure $ Just running
+        _ ->
+          pure Nothing
+    case mRunning of
+      Nothing ->
+        pure $ MCP.Server.ContentText "ID is not in use."
+      Just running -> do
+        Process.terminateProcess (runningProcess running)
+        IO.hClose (runningInput running)
+        IO.hClose (runningOutput running)
+        pure $ MCP.Server.ContentText "Destroyed"
 
 info :: MCP.Server.McpServerInfo
 info =
