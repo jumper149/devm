@@ -37,7 +37,7 @@ in
     systemd.services.devm = {
       description = "Devm MCP server";
       wantedBy = [ "multi-user.target" ];
-      path = [ pkgs.openssh pkgs.sshpass ];
+      path = [ pkgs.openssh pkgs.socat pkgs.sshpass ];
 
       serviceConfig = {
         DynamicUser = true;
