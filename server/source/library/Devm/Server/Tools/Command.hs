@@ -3,12 +3,14 @@
 module Devm.Server.Tools.Command where
 
 import Control.Concurrent.STM qualified as STM
+import Control.Exception qualified as Exception
 import Data.Kind
 import Data.Text qualified as Text
 import Devm.Server.Environment
 import Devm.Server.VM
 import MCP.Server qualified
-import System.IO qualified as IO
+import System.Exit qualified as Exit
+import System.Process qualified as Process
 
 type RequestCommand :: Type
 data RequestCommand = MkRequestCommand
@@ -18,16 +20,55 @@ data RequestCommand = MkRequestCommand
 
 handleCommand :: HandlerEnvironment -> RequestCommand -> IO MCP.Server.Content
 handleCommand MkHandlerEnvironment {vms} MkRequestCommand {identifier, command} = do
-  mRunning <- STM.atomically $ do
+  inUse <- STM.atomically $ do
     pool <- STM.readTVar vms
     pure $
       case lookupVMLock pool identifier of
-        Just (VMisAlreadyInUse running) -> Just running
-        _ -> Nothing
-  case mRunning of
-    Nothing ->
-      pure $ MCP.Server.ContentText "ID is not in use."
-    Just running -> do
-      IO.hPutStrLn (runningInput running) (Text.unpack command)
-      IO.hFlush (runningInput running)
-      pure $ MCP.Server.ContentText "Commanded"
+        Just (VMisAlreadyInUse _) -> True
+        _ -> False
+  if not inUse
+    then pure $ MCP.Server.ContentText "ID is not in use."
+    else do
+      let
+        address :: String
+        address = "10.14.2." <> Text.unpack (displayVMID identifier)
+
+        sshOptions :: [String]
+        sshOptions =
+          [ "-o"
+          , "HostName=" <> address
+          , "-o"
+          , "User=dev"
+          , "-o"
+          , "StrictHostKeyChecking=no"
+          , "-o"
+          , "UserKnownHostsFile=/dev/null"
+          , "-o"
+          , "LogLevel=ERROR"
+          , "-o"
+          , "PreferredAuthentications=password"
+          , "-o"
+          , "PubkeyAuthentication=no"
+          , "-T"
+          ]
+
+        sshPassArguments :: [String]
+        sshPassArguments = ["-p", "", "ssh"] <> sshOptions <> ["dev@devm", "--", Text.unpack command]
+
+      result <-
+        Exception.catch
+          (Process.readProcessWithExitCode "sshpass" sshPassArguments "")
+          ( \err -> do
+              let message = "Could not run ssh: " <> show (err :: Exception.IOException)
+              pure (Exit.ExitFailure 1, "", message)
+          )
+      pure $ MCP.Server.ContentText $ formatResult result
+
+formatResult :: (Exit.ExitCode, String, String) -> Text.Text
+formatResult (exitCode, output, errorOutput) =
+  Text.pack $
+    case exitCode of
+      Exit.ExitSuccess ->
+        output <> if null errorOutput then "" else "stderr:\n" <> errorOutput
+      Exit.ExitFailure code ->
+        "Exit code " <> show code <> "\n" <> output <> if null errorOutput then "" else "stderr:\n" <> errorOutput
