@@ -40,5 +40,5 @@ handleCreate MkHandlerEnvironment {vms, executables = MkVMExecutables {unVMExecu
           STM.atomically $ STM.modifyTVar' vms (setVMLock identifier (VMisAlreadyInUse running))
           _ <- Concurrent.forkIO $ VMProcess.monitorVM vms identifier running
           _ <- Concurrent.forkIO $ VMProcess.forwardStartup identifier readyMarker running
-          _ <- Concurrent.forkIO $ VMProcess.discardOutput (runningError running)
+          _ <- Concurrent.forkIO $ VMProcess.forwardError identifier running
           pure $ MCP.Server.ContentText $ "You are now using ID: " <> displayVMID identifier

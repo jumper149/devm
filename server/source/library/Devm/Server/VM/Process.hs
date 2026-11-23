@@ -65,8 +65,15 @@ forwardStartup identifier marker running =
             Monad.when logging $ IO.putStrLn $ prefix <> line
             go logging
 
-discardOutput :: IO.Handle -> IO ()
-discardOutput handle =
+forwardError :: VMID -> RunningVM -> IO ()
+forwardError identifier running =
+  forwardLines prefix (runningError running)
+ where
+  prefix :: String
+  prefix = "[vm " <> Text.unpack (displayVMID identifier) <> ":err] "
+
+forwardLines :: String -> IO.Handle -> IO ()
+forwardLines prefix handle =
   go `Exception.catch` ignoreIOError
  where
   go :: IO ()
@@ -75,7 +82,8 @@ discardOutput handle =
     if eof
       then IO.hClose handle
       else do
-        _ <- IO.hGetLine handle
+        line <- IO.hGetLine handle
+        IO.putStrLn $ prefix <> line
         go
 
 ignoreIOError :: Exception.IOException -> IO ()
