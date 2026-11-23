@@ -42,6 +42,7 @@ in
         DynamicUser = true;
         SupplementaryGroups = [ "kvm" ];
         StateDirectory = "devm";
+        WorkingDirectory = "%S/devm";
         Restart = "on-failure";
         ExecStart = lib.escapeShellArgs (
           [ "${cfg.package}/bin/devm-server" ]

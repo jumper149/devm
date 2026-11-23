@@ -11,6 +11,7 @@ import Devm.Server.VM
 import MCP.Server qualified
 import MCP.Server.Derive qualified
 import Options.Applicative qualified as Opt
+import System.IO qualified as IO
 
 info :: MCP.Server.McpServerInfo
 info =
@@ -24,6 +25,7 @@ $(pure [])
 
 main :: IO ()
 main = do
+  IO.hSetBuffering IO.stdout IO.LineBuffering
   MkCommandLine {cliVMExecutables = executables@(MkVMExecutables {unVMExecutables = executablesMap}), cliReadyMarker = readyMarker} <- Opt.execParser commandLineParserInfo
   vms <- initializeVMPool $ Map.keys executablesMap
   let environment = MkHandlerEnvironment {..}
