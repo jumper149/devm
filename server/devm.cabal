@@ -59,8 +59,12 @@ library
     , language
   exposed-modules:
     , Devm.Server.CommandLine
+    , Devm.Server.Environment
     , Devm.Server.Main
     , Devm.Server.Tools
+    , Devm.Server.Tools.Command
+    , Devm.Server.Tools.Create
+    , Devm.Server.Tools.Destroy
     , Devm.Server.VM
     , Devm.Server.VM.Process
   hs-source-dirs: source/library
