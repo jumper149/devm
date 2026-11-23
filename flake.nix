@@ -40,6 +40,8 @@
 
     overlays.default = self.subflakes.final.overlays.default;
 
+    nixosModules.default = self.subflakes.final.nixosModules.default;
+
     devShells.x86_64-linux.default =
       with import nixpkgs { system = "x86_64-linux"; overlays = [ self.subflakes.setup.overlays.default ]; };
       let

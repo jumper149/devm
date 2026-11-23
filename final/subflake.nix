@@ -7,4 +7,6 @@
       ${self.subflakes.server.packages.x86_64-linux.default}/bin/devm-server
     '';
 
+  nixosModules.default = import ./module.nix { inherit self; };
+
 }
