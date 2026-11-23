@@ -4,7 +4,7 @@
 module Devm.Server.Main where
 
 import Data.Map qualified as Map
-import Devm.Server.CommandLine
+import Devm.Server.CLI
 import Devm.Server.Environment
 import Devm.Server.Tools
 import Devm.Server.VM

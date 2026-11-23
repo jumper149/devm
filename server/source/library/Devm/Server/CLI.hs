@@ -1,6 +1,6 @@
 {-# LANGUAGE NoFieldSelectors #-}
 
-module Devm.Server.CommandLine where
+module Devm.Server.CLI where
 
 import Data.Kind
 import Data.Map qualified as Map

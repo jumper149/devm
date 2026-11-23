@@ -58,7 +58,7 @@ library
     , dependencies
     , language
   exposed-modules:
-    , Devm.Server.CommandLine
+    , Devm.Server.CLI
     , Devm.Server.Environment
     , Devm.Server.Main
     , Devm.Server.Tools
