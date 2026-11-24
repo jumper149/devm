@@ -24,6 +24,7 @@ common language
     -Wno-missed-specialisations
     -Wno-missing-export-lists
     -Wno-missing-import-lists
+    -Wno-missing-role-annotations
     -Wno-missing-safe-haskell-mode
     -Wno-unsafe
     -Wno-unticked-promoted-constructors
@@ -52,6 +53,7 @@ common dependencies
     , process
     , stm
     , text
+    , transformers
 
 library
   import:

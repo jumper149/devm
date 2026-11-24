@@ -21,8 +21,8 @@ data Tool
   | Command RequestCommand
   | Destroy RequestDestroy
 
-handleTool :: HandlerEnvironment -> MCP.Server.ClientContext -> Tool -> IO MCP.Server.Content
-handleTool environment _ctx = \case
-  Create request -> handleCreate environment request
-  Command request -> handleCommand environment request
-  Destroy request -> handleDestroy environment request
+handleTool :: MCP.Server.ClientContext -> Tool -> HandlerM MCP.Server.Content
+handleTool _ctx = \case
+  Create request -> handleCreate request
+  Command request -> handleCommand request
+  Destroy request -> handleDestroy request

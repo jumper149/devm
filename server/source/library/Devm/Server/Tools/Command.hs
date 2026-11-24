@@ -4,6 +4,7 @@ module Devm.Server.Tools.Command where
 
 import Control.Concurrent.STM qualified as STM
 import Control.Exception qualified as Exception
+import Control.Monad.IO.Class
 import Data.Kind
 import Data.Text qualified as Text
 import Devm.Server.Environment
@@ -18,9 +19,10 @@ data RequestCommand = MkRequestCommand
   , command :: Text.Text
   }
 
-handleCommand :: HandlerEnvironment -> RequestCommand -> IO MCP.Server.Content
-handleCommand MkHandlerEnvironment {vms, sshKey} MkRequestCommand {identifier, command} = do
-  inUse <- STM.atomically $ do
+handleCommand :: RequestCommand -> HandlerM MCP.Server.Content
+handleCommand MkRequestCommand {identifier, command} = do
+  MkHandlerEnvironment {vms, sshKey} <- getEnvironment
+  inUse <- liftIO $ STM.atomically $ do
     pool <- STM.readTVar vms
     pure $
       case lookupVMLock pool identifier of
@@ -64,12 +66,13 @@ handleCommand MkHandlerEnvironment {vms, sshKey} MkRequestCommand {identifier, c
         sshArguments = sshOptions <> ["dev@devm", "--", Text.unpack command]
 
       result <-
-        Exception.catch
-          (Process.readProcessWithExitCode "ssh" sshArguments "")
-          ( \err -> do
-              let message = "Could not run ssh: " <> show (err :: Exception.IOException)
-              pure (Exit.ExitFailure 1, "", message)
-          )
+        liftIO $
+          Exception.catch
+            (Process.readProcessWithExitCode "ssh" sshArguments "")
+            ( \err -> do
+                let message = "Could not run ssh: " <> show (err :: Exception.IOException)
+                pure (Exit.ExitFailure 1, "", message)
+            )
       pure $ MCP.Server.ContentText $ formatResult result
 
 formatResult :: (Exit.ExitCode, String, String) -> Text.Text

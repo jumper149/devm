@@ -5,6 +5,7 @@ module Devm.Server.Tools.Create where
 import Control.Concurrent qualified as Concurrent
 import Control.Concurrent.STM qualified as STM
 import Control.Exception qualified as Exception
+import Control.Monad.IO.Class
 import Data.Kind
 import Data.Map qualified as Map
 import Devm.Server.Environment
@@ -17,13 +18,14 @@ data RequestCreate = MkRequestCreate
   { identifier :: VMID
   }
 
-handleCreate :: HandlerEnvironment -> RequestCreate -> IO MCP.Server.Content
-handleCreate MkHandlerEnvironment {vms, executables = MkVMExecutables {unVMExecutables = executableMap}, readyMarker} MkRequestCreate {identifier} =
+handleCreate :: RequestCreate -> HandlerM MCP.Server.Content
+handleCreate MkRequestCreate {identifier} = do
+  MkHandlerEnvironment {vms, executables = MkVMExecutables {unVMExecutables = executableMap}, readyMarker} <- getEnvironment
   case Map.lookup identifier executableMap of
     Nothing ->
       pure $ MCP.Server.ContentText "ID does not exist."
     Just executable -> do
-      reserved <- STM.atomically $ do
+      reserved <- liftIO $ STM.atomically $ do
         pool <- STM.readTVar vms
         case lookupVMLock pool identifier of
           Just VMisFreeToUse -> do
@@ -35,10 +37,11 @@ handleCreate MkHandlerEnvironment {vms, executables = MkVMExecutables {unVMExecu
         then pure $ MCP.Server.ContentText "ID is already in use."
         else do
           running <-
-            VMProcess.startVM executable
-              `Exception.onException` STM.atomically (STM.modifyTVar' vms (unlockVM identifier))
-          STM.atomically $ STM.modifyTVar' vms (setVMLock identifier (VMisAlreadyInUse running))
-          _ <- Concurrent.forkIO $ VMProcess.monitorVM vms identifier running
-          _ <- Concurrent.forkIO $ VMProcess.forwardStartup identifier readyMarker running
-          _ <- Concurrent.forkIO $ VMProcess.forwardError identifier running
+            liftIO $
+              VMProcess.startVM executable
+                `Exception.onException` STM.atomically (STM.modifyTVar' vms (unlockVM identifier))
+          liftIO $ STM.atomically $ STM.modifyTVar' vms (setVMLock identifier (VMisAlreadyInUse running))
+          _ <- liftIO $ Concurrent.forkIO $ VMProcess.monitorVM vms identifier running
+          _ <- liftIO $ Concurrent.forkIO $ VMProcess.forwardStartup identifier readyMarker running
+          _ <- liftIO $ Concurrent.forkIO $ VMProcess.forwardError identifier running
           pure $ MCP.Server.ContentText $ "You are now using ID: " <> displayVMID identifier

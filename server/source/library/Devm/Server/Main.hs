@@ -29,6 +29,6 @@ main = do
   MkCommandLine {cliVMExecutables = executables@(MkVMExecutables {unVMExecutables = executablesMap}), cliReadyMarker = readyMarker, cliSSHKey = sshKey} <- Opt.execParser commandLineParserInfo
   vms <- initializeVMPool $ Map.keys executablesMap
   let environment = MkHandlerEnvironment {..}
-  let tool = handleTool environment
+  let tool ctx request = runHandlerM environment (handleTool ctx request)
   let handlers = MCP.Server.noHandlers {MCP.Server.tools = Just $(MCP.Server.Derive.deriveToolHandler ''Tool 'tool)}
   MCP.Server.runMcpServerHttp info handlers

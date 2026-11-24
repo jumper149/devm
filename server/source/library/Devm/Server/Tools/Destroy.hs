@@ -3,6 +3,7 @@
 module Devm.Server.Tools.Destroy where
 
 import Control.Concurrent.STM qualified as STM
+import Control.Monad.IO.Class
 import Data.Kind
 import Data.Text qualified as Text
 import Devm.Server.Environment
@@ -17,9 +18,10 @@ data RequestDestroy = MkRequestDestroy
   , destroy :: Text.Text
   }
 
-handleDestroy :: HandlerEnvironment -> RequestDestroy -> IO MCP.Server.Content
-handleDestroy MkHandlerEnvironment {vms} MkRequestDestroy {identifier} = do
-  mRunning <- STM.atomically $ do
+handleDestroy :: RequestDestroy -> HandlerM MCP.Server.Content
+handleDestroy MkRequestDestroy {identifier} = do
+  MkHandlerEnvironment {vms} <- getEnvironment
+  mRunning <- liftIO $ STM.atomically $ do
     pool <- STM.readTVar vms
     case lookupVMLock pool identifier of
       Just (VMisAlreadyInUse running) -> do
@@ -31,8 +33,8 @@ handleDestroy MkHandlerEnvironment {vms} MkRequestDestroy {identifier} = do
     Nothing ->
       pure $ MCP.Server.ContentText "ID is not in use."
     Just running -> do
-      Process.terminateProcess (runningProcess running)
-      IO.hClose (runningInput running)
-      IO.hClose (runningOutput running)
-      IO.hClose (runningError running)
+      liftIO $ Process.terminateProcess (runningProcess running)
+      liftIO $ IO.hClose (runningInput running)
+      liftIO $ IO.hClose (runningOutput running)
+      liftIO $ IO.hClose (runningError running)
       pure $ MCP.Server.ContentText "Destroyed"
