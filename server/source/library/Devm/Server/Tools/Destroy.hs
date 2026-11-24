@@ -25,10 +25,9 @@ handleDestroy MkRequestDestroy {identifier} = do
     pool <- STM.readTVar vms
     case lookupVMLock pool identifier of
       Just (VMisAlreadyInUse running) -> do
-        STM.writeTVar vms $ unlockVM identifier pool
+        STM.writeTVar vms $ setVMLock identifier VMisShuttingDown pool
         pure $ Just running
-      _ ->
-        pure Nothing
+      _ -> pure Nothing
   case mRunning of
     Nothing ->
       pure $ MCP.Server.ContentText "ID is not in use."
@@ -37,4 +36,10 @@ handleDestroy MkRequestDestroy {identifier} = do
       liftIO $ IO.hClose (runningInput running)
       liftIO $ IO.hClose (runningOutput running)
       liftIO $ IO.hClose (runningError running)
+      liftIO $ STM.atomically $ do
+        pool <- STM.readTVar vms
+        case lookupVMLock pool identifier of
+          Just VMisShuttingDown -> do
+            STM.writeTVar vms $ setVMLock identifier VMisFreeToUse pool
+          _ -> undefined
       pure $ MCP.Server.ContentText "Destroyed"

@@ -35,7 +35,7 @@ monitorVM vms identifier running = do
     case lookupVMLock pool identifier of
       Just (VMisAlreadyInUse current)
         | runningToken current == runningToken running ->
-            STM.writeTVar vms $ unlockVM identifier pool
+            STM.writeTVar vms $ setVMLock identifier VMisFreeToUse pool
       _ ->
         pure ()
 

@@ -39,7 +39,7 @@ handleCreate MkRequestCreate {identifier} = do
           running <-
             liftIO $
               VMProcess.startVM executable
-                `Exception.onException` STM.atomically (STM.modifyTVar' vms (unlockVM identifier))
+                `Exception.onException` STM.atomically (STM.modifyTVar' vms (setVMLock identifier VMisFreeToUse))
           liftIO $ STM.atomically $ STM.modifyTVar' vms (setVMLock identifier (VMisAlreadyInUse running))
           _ <- liftIO $ Concurrent.forkIO $ VMProcess.monitorVM vms identifier running
           _ <- liftIO $ Concurrent.forkIO $ VMProcess.forwardStartup identifier readyMarker running

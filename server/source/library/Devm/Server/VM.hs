@@ -42,7 +42,7 @@ runningError :: RunningVM -> IO.Handle
 runningError MkRunningVM {vmError} = vmError
 
 type VMLock :: Type
-data VMLock = VMisFreeToUse | VMisStarting | VMisAlreadyInUse RunningVM
+data VMLock = VMisFreeToUse | VMisStarting | VMisAlreadyInUse RunningVM | VMisShuttingDown
 
 type VMExecutable :: Type
 data VMExecutable = MkVMExecutable Text.Text
@@ -68,7 +68,3 @@ lookupVMLock MkVMPool {unVMPool} identifier =
 setVMLock :: VMID -> VMLock -> VMPool -> VMPool
 setVMLock identifier lock (MkVMPool pool) =
   MkVMPool $ Map.insert identifier lock pool
-
-unlockVM :: VMID -> VMPool -> VMPool
-unlockVM identifier (MkVMPool pool) =
-  MkVMPool $ Map.insert identifier VMisFreeToUse pool
