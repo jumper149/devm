@@ -31,7 +31,7 @@ handleCommand MkHandlerEnvironment {vms} MkRequestCommand {identifier, command} 
     else do
       let
         address :: String
-        address = "10.14.2." <> Text.unpack (displayVMID identifier)
+        address = "10.14.2" <> Text.unpack (displayVMID identifier) <> ".100"
 
         sshOptions :: [String]
         sshOptions =
