@@ -12,6 +12,7 @@ type CommandLine :: Type
 data CommandLine = MkCommandLine
   { cliVMExecutables :: VMExecutables
   , cliReadyMarker :: Text.Text
+  , cliSSHKey :: FilePath
   }
 
 commandLineParser :: Opt.Parser CommandLine
@@ -33,6 +34,11 @@ commandLineParser =
           <> Opt.metavar "MARKER"
           <> Opt.help "Log VM stdout until a line contains MARKER, then discard it."
           <> Opt.value ""
+      )
+    <*> Opt.strOption
+      ( Opt.long "ssh-key"
+          <> Opt.metavar "FILE"
+          <> Opt.help "Path to the SSH private key used when sending commands to VMs."
       )
 
 commandLineParserInfo :: Opt.ParserInfo CommandLine

@@ -19,7 +19,7 @@ data RequestCommand = MkRequestCommand
   }
 
 handleCommand :: HandlerEnvironment -> RequestCommand -> IO MCP.Server.Content
-handleCommand MkHandlerEnvironment {vms} MkRequestCommand {identifier, command} = do
+handleCommand MkHandlerEnvironment {vms, sshKey} MkRequestCommand {identifier, command} = do
   inUse <- STM.atomically $ do
     pool <- STM.readTVar vms
     pure $
@@ -46,18 +46,26 @@ handleCommand MkHandlerEnvironment {vms} MkRequestCommand {identifier, command} 
           , "-o"
           , "LogLevel=ERROR"
           , "-o"
-          , "PreferredAuthentications=password"
+          , "IdentityFile=" <> sshKey
           , "-o"
-          , "PubkeyAuthentication=no"
+          , "IdentitiesOnly=yes"
+          , "-o"
+          , "PreferredAuthentications=publickey"
+          , "-o"
+          , "PubkeyAuthentication=yes"
+          , "-o"
+          , "PasswordAuthentication=no"
+          , "-o"
+          , "BatchMode=yes"
           , "-T"
           ]
 
-        sshPassArguments :: [String]
-        sshPassArguments = ["-p", "", "ssh"] <> sshOptions <> ["dev@devm", "--", Text.unpack command]
+        sshArguments :: [String]
+        sshArguments = sshOptions <> ["dev@devm", "--", Text.unpack command]
 
       result <-
         Exception.catch
-          (Process.readProcessWithExitCode "sshpass" sshPassArguments "")
+          (Process.readProcessWithExitCode "ssh" sshArguments "")
           ( \err -> do
               let message = "Could not run ssh: " <> show (err :: Exception.IOException)
               pure (Exit.ExitFailure 1, "", message)

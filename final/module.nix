@@ -31,13 +31,29 @@ in
         appears, and is discarded afterwards.
       '';
     };
+
+    sshKey = lib.mkOption {
+      type = lib.types.str;
+      description = ''
+        Path to the SSH private key used when sending commands to VMs.
+
+        # Generate a key-pair.
+        sudo install -d -m 0700 -o devm -g devm /var/lib/devm/ssh
+        sudo ssh-keygen -t ed25519 -N "" -C devm -f /var/lib/devm/ssh/id_ed25519
+        sudo chown devm:devm /var/lib/devm/ssh/id_ed25519
+        sudo chmod 0600 /var/lib/devm/ssh/id_ed25519
+
+        # And configure devm to use this key.
+        services.devm.sshKey = "/var/lib/devm/ssh/id_ed25519";
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
     systemd.services.devm = {
       description = "Devm MCP server";
       wantedBy = [ "multi-user.target" ];
-      path = [ pkgs.openssh pkgs.sshpass ];
+      path = [ pkgs.openssh ];
 
       serviceConfig = {
         DynamicUser = true;
@@ -50,6 +66,7 @@ in
           [ "${cfg.package}/bin/devm-server" ]
           ++ lib.concatMap (executable: [ "--vm" executable ]) cfg.vmExecutables
           ++ lib.optionals (cfg.readyMarker != "") [ "--ready" cfg.readyMarker ]
+          ++ [ "--ssh-key" cfg.sshKey ]
         );
       };
     };

@@ -12,4 +12,5 @@ data HandlerEnvironment = MkHandlerEnvironment
   { vms :: STM.TVar VMPool
   , executables :: VMExecutables
   , readyMarker :: Text.Text
+  , sshKey :: FilePath
   }

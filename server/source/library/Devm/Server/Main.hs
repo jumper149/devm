@@ -26,7 +26,7 @@ $(pure [])
 main :: IO ()
 main = do
   IO.hSetBuffering IO.stdout IO.LineBuffering
-  MkCommandLine {cliVMExecutables = executables@(MkVMExecutables {unVMExecutables = executablesMap}), cliReadyMarker = readyMarker} <- Opt.execParser commandLineParserInfo
+  MkCommandLine {cliVMExecutables = executables@(MkVMExecutables {unVMExecutables = executablesMap}), cliReadyMarker = readyMarker, cliSSHKey = sshKey} <- Opt.execParser commandLineParserInfo
   vms <- initializeVMPool $ Map.keys executablesMap
   let environment = MkHandlerEnvironment {..}
   let tool = handleTool environment
