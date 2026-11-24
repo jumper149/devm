@@ -30,13 +30,13 @@ handleCommand MkHandlerEnvironment {vms} MkRequestCommand {identifier, command} 
     then pure $ MCP.Server.ContentText "ID is not in use."
     else do
       let
-        socket :: String
-        socket = "devm-" <> Text.unpack (displayVMID identifier) <> ".sock"
+        address :: String
+        address = "10.14.2." <> Text.unpack (displayVMID identifier)
 
         sshOptions :: [String]
         sshOptions =
           [ "-o"
-          , "ProxyCommand=socat - UNIX-CONNECT:'" <> socket <> "'"
+          , "HostName=" <> address
           , "-o"
           , "User=dev"
           , "-o"
