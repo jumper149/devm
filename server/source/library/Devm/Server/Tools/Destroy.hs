@@ -40,6 +40,8 @@ handleDestroy MkRequestDestroy {accessToken} = do
         case lookupVMLock pool identifier of
           Just VMisShuttingDown ->
             STM.writeTVar vms $ setVMLock identifier VMisFreeToUse pool
-          _ ->
+          Just VMisNotShuttingDown ->
+            pure ()
+          Nothing ->
             pure ()
       pure $ MCP.Server.ContentText "Destroyed"

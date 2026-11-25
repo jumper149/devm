@@ -1,3 +1,5 @@
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
 module Devm.Server.VM where
@@ -71,7 +73,47 @@ runningError :: RunningVM -> IO.Handle
 runningError MkRunningVM {vmError} = vmError
 
 type VMLock :: Type
-data VMLock = VMisFreeToUse | VMisStarting | VMisAlreadyInUse RunningVM | VMisShuttingDown
+data VMLock
+  = VMisFreeToUse
+  | VMisStarting
+  | VMisAlreadyInUse RunningVM
+  | VMisShuttingDown
+
+{-# COMPLETE VMisFreeToUse, VMisNotFreeToUse #-}
+pattern VMisNotFreeToUse :: VMLock
+pattern VMisNotFreeToUse <-
+  ( \case
+      VMisFreeToUse -> Nothing
+      x -> Just x ->
+      Just _
+    )
+
+{-# COMPLETE VMisStarting, VMisNotStarting #-}
+pattern VMisNotStarting :: VMLock
+pattern VMisNotStarting <-
+  ( \case
+      VMisStarting -> Nothing
+      x -> Just x ->
+      Just _
+    )
+
+{-# COMPLETE VMisAlreadyInUse, VMisNotAlreadyInUse #-}
+pattern VMisNotAlreadyInUse :: VMLock
+pattern VMisNotAlreadyInUse <-
+  ( \case
+      VMisAlreadyInUse _ -> Nothing
+      x -> Just x ->
+      Just _
+    )
+
+{-# COMPLETE VMisShuttingDown, VMisNotShuttingDown #-}
+pattern VMisNotShuttingDown :: VMLock
+pattern VMisNotShuttingDown <-
+  ( \case
+      VMisShuttingDown -> Nothing
+      x -> Just x ->
+      Just _
+    )
 
 type VMExecutable :: Type
 data VMExecutable = MkVMExecutable Text.Text
@@ -117,12 +159,14 @@ updateAccessTokenIndex identifier previousLock lock index =
         case previousLock of
           Just (VMisAlreadyInUse running) ->
             Map.update (remove identifier) (runningAccessToken running) index
-          _ ->
+          Just VMisNotAlreadyInUse ->
+            index
+          Nothing ->
             index
    in case lock of
         VMisAlreadyInUse running ->
           Map.insert (runningAccessToken running) identifier withoutPrevious
-        _ ->
+        VMisNotAlreadyInUse ->
           withoutPrevious
  where
   remove :: VMID -> VMID -> Maybe VMID
@@ -145,5 +189,7 @@ lookupRunningVMByAccessToken pool accessToken = do
     case lookupVMLock pool identifier of
       Just (VMisAlreadyInUse current)
         | runningAccessToken current == accessToken -> Just current
-      _ -> Nothing
+      Just (VMisAlreadyInUse _) -> Nothing
+      Just VMisNotAlreadyInUse -> Nothing
+      Nothing -> Nothing
   pure (identifier, running)

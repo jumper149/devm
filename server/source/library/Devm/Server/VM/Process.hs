@@ -37,7 +37,11 @@ monitorVM vms identifier running = do
       Just (VMisAlreadyInUse current)
         | runningLifetimeToken current == runningLifetimeToken running ->
             STM.writeTVar vms $ setVMLock identifier VMisFreeToUse pool
-      _ ->
+      Just (VMisAlreadyInUse _) ->
+        pure ()
+      Just VMisNotAlreadyInUse ->
+        pure ()
+      Nothing ->
         pure ()
 
 forwardOutput :: VMID -> Text.Text -> STM.TMVar Bool -> Bool -> RunningVM -> IO ()
