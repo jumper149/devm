@@ -12,22 +12,19 @@ import MCP.Server qualified
 
 type RequestCommand :: Type
 data RequestCommand = MkRequestCommand
-  { identifier :: VMID
-  , accessToken :: Text.Text
+  { accessToken :: Text.Text
   , command :: Text.Text
   }
   deriving stock (Show)
 
 handleCommand :: RequestCommand -> HandlerM MCP.Server.Content
-handleCommand MkRequestCommand {identifier, accessToken, command} = do
+handleCommand MkRequestCommand {accessToken, command} = do
   vms <- getVMState
   authorized <- liftIO $ STM.atomically $ do
     pool <- STM.readTVar vms
-    pure $
-      case lookupVMLock pool identifier of
-        Just (VMisAlreadyInUse running)
-          | MkVMAccessToken accessToken == runningAccessToken running -> True
-        _ -> False
-  if authorized
-    then MCP.Server.ContentText <$> sshCommand identifier command
-    else invalidAccess
+    pure $ lookupRunningVMByAccessToken pool (MkVMAccessToken accessToken)
+  case authorized of
+    Just (identifier, _) ->
+      MCP.Server.ContentText <$> sshCommand identifier command
+    Nothing ->
+      invalidAccess

@@ -6,6 +6,7 @@ import Control.Concurrent.STM qualified as STM
 import Data.Bits ((.&.), (.|.))
 import Data.Kind
 import Data.Map qualified as Map
+import Data.Maybe (listToMaybe)
 import Data.Text qualified as Text
 import Data.UUID.Types qualified as UUID
 import Data.Unique qualified as Unique
@@ -96,3 +97,15 @@ lookupVMLock MkVMPool {unVMPool} identifier =
 setVMLock :: VMID -> VMLock -> VMPool -> VMPool
 setVMLock identifier lock (MkVMPool pool) =
   MkVMPool $ Map.insert identifier lock pool
+
+findFreeVM :: VMPool -> Maybe VMID
+findFreeVM MkVMPool {unVMPool} =
+  listToMaybe [identifier | (identifier, VMisFreeToUse) <- Map.toList unVMPool]
+
+lookupRunningVMByAccessToken :: VMPool -> VMAccessToken -> Maybe (VMID, RunningVM)
+lookupRunningVMByAccessToken MkVMPool {unVMPool} accessToken =
+  listToMaybe
+    [ (identifier, running)
+    | (identifier, VMisAlreadyInUse running) <- Map.toList unVMPool
+    , runningAccessToken running == accessToken
+    ]
