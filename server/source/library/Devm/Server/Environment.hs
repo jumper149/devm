@@ -3,40 +3,31 @@ module Devm.Server.Environment where
 import Control.Concurrent.STM qualified as STM
 import Control.Exception qualified as Exception
 import Control.Monad.IO.Class
-import Control.Monad.Trans.Reader
 import Data.Kind
 import Data.Map qualified as Map
 import Data.Text qualified as Text
+import Devm.Server.Environment.Internal qualified as Internal
 import Devm.Server.VM
 import System.Exit qualified as Exit
 import System.Process qualified as Process
 
-type HandlerEnvironment :: Type
-data HandlerEnvironment = MkHandlerEnvironment
-  { vms :: STM.TVar VMPool
-  , executables :: VMExecutables
-  , readyMarker :: Text.Text
-  , sshKeyFile :: FilePath
-  }
-
 type HandlerM :: Type -> Type
-newtype HandlerM a = MkHandlerM {unHandlerM :: ReaderT HandlerEnvironment IO a}
-  deriving newtype (Functor, Applicative, Monad, MonadIO)
+type HandlerM = Internal.HandlerM
 
-runHandlerM :: HandlerEnvironment -> HandlerM a -> IO a
-runHandlerM env MkHandlerM {unHandlerM} = runReaderT unHandlerM env
-
-getEnvironment :: HandlerM HandlerEnvironment
-getEnvironment = MkHandlerM ask
+getVMState :: HandlerM (STM.TVar VMPool)
+getVMState = Internal.vms <$> Internal.getEnvironment
 
 getVMExecutable :: VMID -> HandlerM (Maybe VMExecutable)
 getVMExecutable identifier = do
-  MkVMExecutables executables <- executables <$> getEnvironment
+  MkVMExecutables executables <- Internal.executables <$> Internal.getEnvironment
   pure $ Map.lookup identifier executables
+
+getReadyMarker :: HandlerM Text.Text
+getReadyMarker = Internal.readyMarker <$> Internal.getEnvironment
 
 sshCommand :: VMID -> Text.Text -> HandlerM Text.Text
 sshCommand identifier command = do
-  sshKeyFile <- sshKeyFile <$> getEnvironment
+  sshKeyFile <- Internal.sshKeyFile <$> Internal.getEnvironment
   let
     address :: String
     address = "10.14.2" <> Text.unpack (displayVMID identifier) <> ".100"

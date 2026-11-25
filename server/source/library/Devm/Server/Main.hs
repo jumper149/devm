@@ -4,7 +4,7 @@ module Devm.Server.Main where
 
 import Data.Map qualified as Map
 import Devm.Server.CLI
-import Devm.Server.Environment
+import Devm.Server.Environment.Internal qualified as Internal
 import Devm.Server.Tools
 import Devm.Server.VM
 import MCP.Server qualified
@@ -33,7 +33,7 @@ main = do
     Opt.execParser commandLineParserInfo
   vms <- initializeVMPool $ Map.keys executablesMap
   let httpConfig = MCP.Server.defaultHttpConfig {MCP.Server.httpHost = cliHttpHost, MCP.Server.httpPort = cliHttpPort}
-  let environment = MkHandlerEnvironment {..}
-  let tool ctx request = runHandlerM environment (handleTool ctx request)
+  let environment = Internal.MkHandlerEnvironment {..}
+  let tool ctx request = Internal.runHandlerM environment (handleTool ctx request)
   let handlers = MCP.Server.noHandlers {MCP.Server.tools = Just $(MCP.Server.Derive.deriveToolHandler ''Tool 'tool)}
   MCP.Server.runMcpServerHttpWithConfig httpConfig info handlers

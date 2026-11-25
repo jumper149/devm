@@ -20,7 +20,7 @@ data RequestDestroy = MkRequestDestroy
 
 handleDestroy :: RequestDestroy -> HandlerM MCP.Server.Content
 handleDestroy MkRequestDestroy {identifier} = do
-  MkHandlerEnvironment {vms} <- getEnvironment
+  vms <- getVMState
   mRunning <- liftIO $ STM.atomically $ do
     pool <- STM.readTVar vms
     case lookupVMLock pool identifier of

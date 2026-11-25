@@ -19,7 +19,8 @@ data RequestCreate = MkRequestCreate
 
 handleCreate :: RequestCreate -> HandlerM MCP.Server.Content
 handleCreate MkRequestCreate {identifier} = do
-  MkHandlerEnvironment {vms, readyMarker} <- getEnvironment
+  vms <- getVMState
+  readyMarker <- getReadyMarker
   getVMExecutable identifier >>= \case
     Nothing ->
       pure $ MCP.Server.ContentText "ID does not exist."

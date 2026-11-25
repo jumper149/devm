@@ -63,6 +63,7 @@ library
   exposed-modules:
     , Devm.Server.CLI
     , Devm.Server.Environment
+    , Devm.Server.Environment.Internal
     , Devm.Server.Main
     , Devm.Server.Tools
     , Devm.Server.Tools.Command

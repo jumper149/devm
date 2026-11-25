@@ -18,7 +18,7 @@ data RequestCommand = MkRequestCommand
 
 handleCommand :: RequestCommand -> HandlerM MCP.Server.Content
 handleCommand MkRequestCommand {identifier, command} = do
-  MkHandlerEnvironment {vms} <- getEnvironment
+  vms <- getVMState
   inUse <- liftIO $ STM.atomically $ do
     pool <- STM.readTVar vms
     pure $
