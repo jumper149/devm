@@ -20,8 +20,6 @@ info =
     , MCP.Server.serverInstructions = ""
     }
 
-$(pure [])
-
 main :: IO ()
 main = do
   IO.hSetBuffering IO.stdout IO.LineBuffering

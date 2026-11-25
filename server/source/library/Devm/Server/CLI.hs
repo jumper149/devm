@@ -1,5 +1,3 @@
-{-# LANGUAGE NoFieldSelectors #-}
-
 module Devm.Server.CLI where
 
 import Data.Kind

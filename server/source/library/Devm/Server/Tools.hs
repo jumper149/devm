@@ -1,12 +1,4 @@
-{-# LANGUAGE DuplicateRecordFields #-}
-
-module Devm.Server.Tools (
-  module Devm.Server.Tools.Command,
-  module Devm.Server.Tools.Create,
-  module Devm.Server.Tools.Destroy,
-  Tool (..),
-  handleTool,
-) where
+module Devm.Server.Tools where
 
 import Data.Kind
 import Devm.Server.Environment
