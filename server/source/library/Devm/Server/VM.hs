@@ -1,6 +1,5 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE NoFieldSelectors #-}
 
 module Devm.Server.VM where
 
@@ -216,13 +215,9 @@ reserveRandomVM vms = do
         then pure $ Just identifier
         else reserveRandomVM vms
 
-lookupVMIDByAccessToken :: VMPool -> VMAccessToken -> Maybe VMID
-lookupVMIDByAccessToken MkVMPool {unVMAccessTokenIndex} accessToken =
-  Map.lookup accessToken unVMAccessTokenIndex
-
 lookupRunningVMByAccessToken :: VMPool -> VMAccessToken -> Maybe (VMID, RunningVM)
 lookupRunningVMByAccessToken pool accessToken = do
-  identifier <- lookupVMIDByAccessToken pool accessToken
+  identifier <- Map.lookup accessToken $ unVMAccessTokenIndex pool
   running <-
     case lookupVMLock pool identifier of
       Just (VMisAlreadyInUse current)
