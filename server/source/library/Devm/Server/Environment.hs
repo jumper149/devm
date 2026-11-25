@@ -15,7 +15,7 @@ data HandlerEnvironment = MkHandlerEnvironment
   { vms :: STM.TVar VMPool
   , executables :: VMExecutables
   , readyMarker :: Text.Text
-  , sshKey :: FilePath
+  , sshKeyFile :: FilePath
   }
 
 type HandlerM :: Type -> Type
@@ -40,7 +40,7 @@ getRunningVM identifier = do
 
 sshCommand :: VMID -> Text.Text -> HandlerM Text.Text
 sshCommand identifier command = do
-  sshKeyFile <- sshKey <$> getEnvironment
+  sshKeyFile <- sshKeyFile <$> getEnvironment
   let
     address :: String
     address = "10.14.2" <> Text.unpack (displayVMID identifier) <> ".100"
