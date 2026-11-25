@@ -17,6 +17,7 @@ data RequestDestroy = MkRequestDestroy
   { identifier :: VMID
   , destroy :: Text.Text
   }
+  deriving stock (Show)
 
 handleDestroy :: RequestDestroy -> HandlerM MCP.Server.Content
 handleDestroy MkRequestDestroy {identifier} = do

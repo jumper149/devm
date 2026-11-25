@@ -19,6 +19,7 @@ type RequestCreate :: Type
 data RequestCreate = MkRequestCreate
   { identifier :: VMID
   }
+  deriving stock (Show)
 
 sshDaemonStartedMarker :: Text.Text
 sshDaemonStartedMarker = "Started SSH Daemon"

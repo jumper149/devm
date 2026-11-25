@@ -15,6 +15,7 @@ data RequestCommand = MkRequestCommand
   { identifier :: VMID
   , command :: Text.Text
   }
+  deriving stock (Show)
 
 handleCommand :: RequestCommand -> HandlerM MCP.Server.Content
 handleCommand MkRequestCommand {identifier, command} = do

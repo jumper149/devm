@@ -12,7 +12,7 @@ import System.Process qualified as Process
 
 type VMID :: Type
 data VMID = MkVMID Int
-  deriving stock (Eq, Ord)
+  deriving stock (Eq, Ord, Show)
 
 displayVMID :: VMID -> Text.Text
 displayVMID (MkVMID vmID) = Text.pack $ show vmID
