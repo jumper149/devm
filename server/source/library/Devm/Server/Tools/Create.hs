@@ -69,7 +69,7 @@ stopFailedVM vms identifier running = do
     pool <- STM.readTVar vms
     case lookupVMLock pool identifier of
       Just (VMisAlreadyInUse current)
-        | runningToken current == runningToken running ->
+        | runningLifetimeToken current == runningLifetimeToken running ->
             STM.writeTVar vms $ setVMLock identifier VMisFreeToUse pool
       _ ->
         pure ()

@@ -12,7 +12,7 @@ import System.Process qualified as Process
 
 startVM :: VMExecutable -> IO RunningVM
 startVM (MkVMExecutable path) = do
-  token <- Unique.newUnique
+  lifetimeToken <- Unique.newUnique
   created <-
     Process.createProcess $
       (Process.proc (Text.unpack path) [])
@@ -22,7 +22,7 @@ startVM (MkVMExecutable path) = do
         }
   case created of
     (Just vmInput, Just vmOutput, Just vmError, vmProcess) ->
-      pure MkRunningVM {vmToken = token, vmProcess, vmInput, vmOutput, vmError}
+      pure MkRunningVM {vmLifetimeToken = lifetimeToken, vmProcess, vmInput, vmOutput, vmError}
     _ ->
       Exception.throwIO $ IOError.userError "Could not create pipes for the VM executable."
 
@@ -34,7 +34,7 @@ monitorVM vms identifier running = do
     pool <- STM.readTVar vms
     case lookupVMLock pool identifier of
       Just (VMisAlreadyInUse current)
-        | runningToken current == runningToken running ->
+        | runningLifetimeToken current == runningLifetimeToken running ->
             STM.writeTVar vms $ setVMLock identifier VMisFreeToUse pool
       _ ->
         pure ()

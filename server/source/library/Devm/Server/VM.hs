@@ -19,15 +19,15 @@ displayVMID (MkVMID vmID) = Text.pack $ show vmID
 
 type RunningVM :: Type
 data RunningVM = MkRunningVM
-  { vmToken :: Unique.Unique
+  { vmLifetimeToken :: Unique.Unique
   , vmProcess :: Process.ProcessHandle
   , vmInput :: IO.Handle
   , vmOutput :: IO.Handle
   , vmError :: IO.Handle
   }
 
-runningToken :: RunningVM -> Unique.Unique
-runningToken MkRunningVM {vmToken} = vmToken
+runningLifetimeToken :: RunningVM -> Unique.Unique
+runningLifetimeToken MkRunningVM {vmLifetimeToken} = vmLifetimeToken
 
 runningProcess :: RunningVM -> Process.ProcessHandle
 runningProcess MkRunningVM {vmProcess} = vmProcess
