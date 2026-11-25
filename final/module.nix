@@ -32,6 +32,22 @@ in
       '';
     };
 
+    httpHost = lib.mkOption {
+      type = lib.types.str;
+      default = "localhost";
+      description = ''
+        Hostname or IP address for the MCP HTTP server to listen on.
+      '';
+    };
+
+    httpPort = lib.mkOption {
+      type = lib.types.port;
+      default = 9141;
+      description = ''
+        Port for the MCP HTTP server to listen on.
+      '';
+    };
+
     sshKey = lib.mkOption {
       type = lib.types.str;
       description = ''
@@ -66,6 +82,8 @@ in
           [ "${cfg.package}/bin/devm-server" ]
           ++ lib.concatMap (executable: [ "--vm" executable ]) cfg.vmExecutables
           ++ lib.optionals (cfg.readyMarker != "") [ "--ready" cfg.readyMarker ]
+          ++ [ "--host" cfg.httpHost ]
+          ++ [ "--port" (toString cfg.httpPort) ]
           ++ [ "--ssh-key" cfg.sshKey ]
         );
       };
