@@ -5,6 +5,7 @@ import Control.Exception qualified as Exception
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Reader
 import Data.Kind
+import Data.Map qualified as Map
 import Data.Text qualified as Text
 import Devm.Server.VM
 import System.Exit qualified as Exit
@@ -27,6 +28,11 @@ runHandlerM env MkHandlerM {unHandlerM} = runReaderT unHandlerM env
 
 getEnvironment :: HandlerM HandlerEnvironment
 getEnvironment = MkHandlerM ask
+
+getVMExecutable :: VMID -> HandlerM (Maybe VMExecutable)
+getVMExecutable identifier = do
+  MkVMExecutables executables <- executables <$> getEnvironment
+  pure $ Map.lookup identifier executables
 
 getRunningVM :: VMID -> HandlerM (Maybe RunningVM)
 getRunningVM identifier = do

@@ -7,7 +7,6 @@ import Control.Concurrent.STM qualified as STM
 import Control.Exception qualified as Exception
 import Control.Monad.IO.Class
 import Data.Kind
-import Data.Map qualified as Map
 import Devm.Server.Environment
 import Devm.Server.VM
 import Devm.Server.VM.Process qualified as VMProcess
@@ -20,8 +19,8 @@ data RequestCreate = MkRequestCreate
 
 handleCreate :: RequestCreate -> HandlerM MCP.Server.Content
 handleCreate MkRequestCreate {identifier} = do
-  MkHandlerEnvironment {vms, executables = MkVMExecutables {unVMExecutables = executableMap}, readyMarker} <- getEnvironment
-  case Map.lookup identifier executableMap of
+  MkHandlerEnvironment {vms, readyMarker} <- getEnvironment
+  getVMExecutable identifier >>= \case
     Nothing ->
       pure $ MCP.Server.ContentText "ID does not exist."
     Just executable -> do
