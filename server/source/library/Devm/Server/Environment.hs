@@ -22,6 +22,12 @@ getVMExecutable identifier = do
   MkVMExecutables executables <- Internal.executables <$> Internal.getEnvironment
   pure $ Map.lookup identifier executables
 
+getLogRequests :: HandlerM Bool
+getLogRequests = Internal.logRequests <$> Internal.getEnvironment
+
+getLogVMs :: HandlerM Bool
+getLogVMs = Internal.logVMs <$> Internal.getEnvironment
+
 sshCommand :: VMID -> Text.Text -> HandlerM Text.Text
 sshCommand identifier command = do
   sshKeyFile <- Internal.sshKeyFile <$> Internal.getEnvironment

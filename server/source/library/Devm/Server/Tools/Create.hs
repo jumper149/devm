@@ -48,9 +48,10 @@ handleCreate MkRequestCreate {identifier} = do
                 `Exception.onException` STM.atomically (STM.modifyTVar' vms (setVMLock identifier VMisFreeToUse))
           liftIO $ STM.atomically $ STM.modifyTVar' vms (setVMLock identifier (VMisAlreadyInUse running))
           ready <- liftIO STM.newEmptyTMVarIO
+          logVMs <- getLogVMs
           _ <- liftIO $ Concurrent.forkIO $ VMProcess.monitorVM vms identifier running
-          _ <- liftIO $ Concurrent.forkIO $ VMProcess.forwardOutput identifier sshDaemonStartedMarker ready running
-          _ <- liftIO $ Concurrent.forkIO $ VMProcess.forwardError identifier running
+          _ <- liftIO $ Concurrent.forkIO $ VMProcess.forwardOutput identifier sshDaemonStartedMarker ready logVMs running
+          _ <- liftIO $ Concurrent.forkIO $ VMProcess.forwardError identifier logVMs running
           started <- liftIO $ STM.atomically $ STM.takeTMVar ready
           if started
             then pure $ MCP.Server.ContentText $ "You are now using ID: " <> displayVMID identifier

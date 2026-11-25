@@ -13,6 +13,8 @@ data CommandLine = MkCommandLine
   , cliSSHKey :: FilePath
   , cliHttpHost :: String
   , cliHttpPort :: Int
+  , cliLogRequests :: Bool
+  , cliLogVMs :: Bool
   }
 
 commandLineParser :: Opt.Parser CommandLine
@@ -49,6 +51,16 @@ commandLineParser = do
           <> Opt.metavar "PORT"
           <> Opt.help "Port to listen on."
           <> Opt.value 9141
+      )
+  cliLogRequests <-
+    Opt.switch
+      ( Opt.long "log-requests"
+          <> Opt.help "Log requests on StdOut."
+      )
+  cliLogVMs <-
+    Opt.switch
+      ( Opt.long "log-vms"
+          <> Opt.help "Log VM startup on StdOut."
       )
   pure MkCommandLine {..}
 

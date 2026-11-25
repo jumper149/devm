@@ -39,8 +39,8 @@ monitorVM vms identifier running = do
       _ ->
         pure ()
 
-forwardOutput :: VMID -> Text.Text -> STM.TMVar Bool -> RunningVM -> IO ()
-forwardOutput identifier marker ready running =
+forwardOutput :: VMID -> Text.Text -> STM.TMVar Bool -> Bool -> RunningVM -> IO ()
+forwardOutput identifier marker ready logVMs running =
   go `Exception.catch` onError
  where
   prefix :: String
@@ -64,7 +64,7 @@ forwardOutput identifier marker ready running =
       then finish False
       else do
         line <- IO.hGetLine handle
-        IO.putStrLn $ prefix <> line
+        Monad.when logVMs $ IO.putStrLn $ prefix <> line
         Monad.when (marker `Text.isInfixOf` stripAnsi (Text.pack line)) $ do
           _ <- STM.atomically $ STM.tryPutTMVar ready True
           pure ()
@@ -84,15 +84,15 @@ stripAnsi = Text.pack . go . Text.unpack
     | char >= '\x40' && char <= '\x7E' = rest
     | otherwise = dropCsi rest
 
-forwardError :: VMID -> RunningVM -> IO ()
-forwardError identifier running =
-  forwardLines prefix (runningError running)
+forwardError :: VMID -> Bool -> RunningVM -> IO ()
+forwardError identifier logVMs running =
+  forwardLines prefix logVMs (runningError running)
  where
   prefix :: String
   prefix = "[vm " <> Text.unpack (displayVMID identifier) <> ":err] "
 
-forwardLines :: String -> IO.Handle -> IO ()
-forwardLines prefix handle =
+forwardLines :: String -> Bool -> IO.Handle -> IO ()
+forwardLines prefix logVMs handle =
   go `Exception.catch` ignoreIOError
  where
   go :: IO ()
@@ -102,7 +102,7 @@ forwardLines prefix handle =
       then IO.hClose handle
       else do
         line <- IO.hGetLine handle
-        IO.putStrLn $ prefix <> line
+        Monad.when logVMs $ IO.putStrLn $ prefix <> line
         go
 
 ignoreIOError :: Exception.IOException -> IO ()

@@ -1,5 +1,6 @@
 module Devm.Server.Tools where
 
+import Control.Monad qualified as Monad
 import Control.Monad.IO.Class
 import Data.Kind
 import Devm.Server.Environment
@@ -17,7 +18,8 @@ data Tool
 
 handleTool :: MCP.Server.ClientContext -> Tool -> HandlerM MCP.Server.Content
 handleTool _ctx tool = do
-  liftIO $ putStrLn $ "Handling tool: " <> show tool
+  logRequests <- getLogRequests
+  Monad.when logRequests $ liftIO $ putStrLn $ "Handling tool: " <> show tool
   case tool of
     Create request -> handleCreate request
     Command request -> handleCommand request

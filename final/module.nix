@@ -39,6 +39,22 @@ in
       '';
     };
 
+    logRequests = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Log MCP requests on stdout.
+      '';
+    };
+
+    logVMs = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Log VM stdout and stderr on stdout.
+      '';
+    };
+
     sshKey = lib.mkOption {
       type = lib.types.str;
       description = ''
@@ -75,6 +91,8 @@ in
           ++ [ "--host" cfg.httpHost ]
           ++ [ "--port" (toString cfg.httpPort) ]
           ++ [ "--ssh-key" cfg.sshKey ]
+          ++ lib.optionals cfg.logRequests [ "--log-requests" ]
+          ++ lib.optionals cfg.logVMs [ "--log-vms" ]
         );
       };
     };

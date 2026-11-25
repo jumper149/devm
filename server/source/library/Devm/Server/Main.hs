@@ -28,6 +28,8 @@ main = do
     , cliSSHKey = sshKeyFile
     , cliHttpHost
     , cliHttpPort
+    , cliLogRequests = logRequests
+    , cliLogVMs = logVMs
     } <-
     Opt.execParser commandLineParserInfo
   vms <- initializeVMPool $ Map.keys executablesMap

@@ -11,6 +11,8 @@ data HandlerEnvironment = MkHandlerEnvironment
   { vms :: STM.TVar VMPool
   , executables :: VMExecutables
   , sshKeyFile :: FilePath
+  , logRequests :: Bool
+  , logVMs :: Bool
   }
 
 type HandlerM :: Type -> Type
