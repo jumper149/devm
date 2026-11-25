@@ -48,11 +48,11 @@ common language
 common dependencies
   build-depends:
     , base
-    , bytestring
     , containers
     , mcp-server
     , optparse-applicative
     , process
+    , random
     , stm
     , text
     , transformers
