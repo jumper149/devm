@@ -23,7 +23,7 @@ displayVMID (MkVMID vmID) = Text.pack $ show vmID
 
 type VMAccessToken :: Type
 newtype VMAccessToken = MkVMAccessToken {unVMAccessToken :: Text.Text}
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Ord, Show)
 
 displayAccessToken :: VMAccessToken -> Text.Text
 displayAccessToken MkVMAccessToken {unVMAccessToken} = unVMAccessToken
@@ -80,32 +80,70 @@ type VMExecutables :: Type
 data VMExecutables = MkVMExecutables {unVMExecutables :: Map.Map VMID VMExecutable}
 
 type VMPool :: Type
-newtype VMPool = MkVMPool {unVMPool :: Map.Map VMID VMLock}
+data VMPool = MkVMPool
+  { unVMPool :: Map.Map VMID VMLock
+  , unVMAccessTokenIndex :: Map.Map VMAccessToken VMID
+  }
 
 initializeVMPool :: [VMID] -> IO (STM.TVar VMPool)
 initializeVMPool identifiers =
   STM.atomically $
     STM.newTVar $
-      MkVMPool $
-        Map.fromList $
-          (,VMisFreeToUse) <$> identifiers
+      MkVMPool
+        { unVMPool = Map.fromList $ (,VMisFreeToUse) <$> identifiers
+        , unVMAccessTokenIndex = Map.empty
+        }
 
 lookupVMLock :: VMPool -> VMID -> Maybe VMLock
 lookupVMLock MkVMPool {unVMPool} identifier =
   Map.lookup identifier unVMPool
 
 setVMLock :: VMID -> VMLock -> VMPool -> VMPool
-setVMLock identifier lock (MkVMPool pool) =
-  MkVMPool $ Map.insert identifier lock pool
+setVMLock identifier lock MkVMPool {unVMPool, unVMAccessTokenIndex} =
+  MkVMPool
+    { unVMPool = Map.insert identifier lock unVMPool
+    , unVMAccessTokenIndex =
+        updateAccessTokenIndex identifier (Map.lookup identifier unVMPool) lock unVMAccessTokenIndex
+    }
+
+updateAccessTokenIndex ::
+  VMID ->
+  Maybe VMLock ->
+  VMLock ->
+  Map.Map VMAccessToken VMID ->
+  Map.Map VMAccessToken VMID
+updateAccessTokenIndex identifier previousLock lock index =
+  let withoutPrevious =
+        case previousLock of
+          Just (VMisAlreadyInUse running) ->
+            Map.update (remove identifier) (runningAccessToken running) index
+          _ ->
+            index
+   in case lock of
+        VMisAlreadyInUse running ->
+          Map.insert (runningAccessToken running) identifier withoutPrevious
+        _ ->
+          withoutPrevious
+ where
+  remove :: VMID -> VMID -> Maybe VMID
+  remove expected current
+    | expected == current = Nothing
+    | otherwise = Just current
 
 findFreeVM :: VMPool -> Maybe VMID
 findFreeVM MkVMPool {unVMPool} =
   listToMaybe [identifier | (identifier, VMisFreeToUse) <- Map.toList unVMPool]
 
+lookupVMIDByAccessToken :: VMPool -> VMAccessToken -> Maybe VMID
+lookupVMIDByAccessToken MkVMPool {unVMAccessTokenIndex} accessToken =
+  Map.lookup accessToken unVMAccessTokenIndex
+
 lookupRunningVMByAccessToken :: VMPool -> VMAccessToken -> Maybe (VMID, RunningVM)
-lookupRunningVMByAccessToken MkVMPool {unVMPool} accessToken =
-  listToMaybe
-    [ (identifier, running)
-    | (identifier, VMisAlreadyInUse running) <- Map.toList unVMPool
-    , runningAccessToken running == accessToken
-    ]
+lookupRunningVMByAccessToken pool accessToken = do
+  identifier <- lookupVMIDByAccessToken pool accessToken
+  running <-
+    case lookupVMLock pool identifier of
+      Just (VMisAlreadyInUse current)
+        | runningAccessToken current == accessToken -> Just current
+      _ -> Nothing
+  pure (identifier, running)
