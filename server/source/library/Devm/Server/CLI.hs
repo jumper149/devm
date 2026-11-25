@@ -36,8 +36,7 @@ commandLineParser = do
           <> Opt.help "Path to the SSH private key used when sending commands to VMs."
       )
   cliHttpHost <-
-    Opt.option
-      Opt.auto
+    Opt.strOption
       ( Opt.long "host"
           <> Opt.metavar "HOST"
           <> Opt.help "Hostname/IP to listen on."
