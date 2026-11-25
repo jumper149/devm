@@ -20,7 +20,9 @@ handleTool :: MCP.Server.ClientContext -> Tool -> HandlerM MCP.Server.Content
 handleTool _ctx tool = do
   logRequests <- getLogRequests
   Monad.when logRequests $ liftIO $ putStrLn $ "Handling tool: " <> show tool
-  case tool of
+  response <- case tool of
     Create request -> handleCreate request
     Command request -> handleCommand request
     Destroy request -> handleDestroy request
+  Monad.when logRequests $ liftIO $ putStrLn $ "Responding to tool (" <> show tool <> "): " <> take 100 (show response)
+  pure response
