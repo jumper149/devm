@@ -2,6 +2,8 @@
 
 module Devm.Server.Tools.Command where
 
+import Control.Concurrent.STM qualified as STM
+import Control.Monad.IO.Class
 import Data.Kind
 import Data.Text qualified as Text
 import Devm.Server.Environment
@@ -15,7 +17,14 @@ data RequestCommand = MkRequestCommand
   }
 
 handleCommand :: RequestCommand -> HandlerM MCP.Server.Content
-handleCommand MkRequestCommand {identifier, command} =
-  getRunningVM identifier >>= \case
-    Nothing -> pure $ MCP.Server.ContentText "ID is not in use."
-    Just _ -> MCP.Server.ContentText <$> sshCommand identifier command
+handleCommand MkRequestCommand {identifier, command} = do
+  MkHandlerEnvironment {vms} <- getEnvironment
+  inUse <- liftIO $ STM.atomically $ do
+    pool <- STM.readTVar vms
+    pure $
+      case lookupVMLock pool identifier of
+        Just (VMisAlreadyInUse _) -> True
+        _ -> False
+  if inUse
+    then MCP.Server.ContentText <$> sshCommand identifier command
+    else pure $ MCP.Server.ContentText "ID is not in use."

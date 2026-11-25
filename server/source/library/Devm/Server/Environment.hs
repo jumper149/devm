@@ -34,16 +34,6 @@ getVMExecutable identifier = do
   MkVMExecutables executables <- executables <$> getEnvironment
   pure $ Map.lookup identifier executables
 
-getRunningVM :: VMID -> HandlerM (Maybe RunningVM)
-getRunningVM identifier = do
-  vms <- vms <$> getEnvironment
-  liftIO $ STM.atomically $ do
-    pool <- STM.readTVar vms
-    pure $
-      case lookupVMLock pool identifier of
-        Just (VMisAlreadyInUse runningVM) -> Just runningVM
-        _ -> Nothing
-
 sshCommand :: VMID -> Text.Text -> HandlerM Text.Text
 sshCommand identifier command = do
   sshKeyFile <- sshKeyFile <$> getEnvironment
