@@ -13,6 +13,7 @@ import System.Process qualified as Process
 startVM :: VMExecutable -> IO RunningVM
 startVM (MkVMExecutable path) = do
   lifetimeToken <- Unique.newUnique
+  accessToken <- newVMAccessToken
   created <-
     Process.createProcess $
       (Process.proc (Text.unpack path) [])
@@ -22,7 +23,7 @@ startVM (MkVMExecutable path) = do
         }
   case created of
     (Just vmInput, Just vmOutput, Just vmError, vmProcess) ->
-      pure MkRunningVM {vmLifetimeToken = lifetimeToken, vmProcess, vmInput, vmOutput, vmError}
+      pure MkRunningVM {vmLifetimeToken = lifetimeToken, vmAccessToken = accessToken, vmProcess, vmInput, vmOutput, vmError}
     _ ->
       Exception.throwIO $ IOError.userError "Could not create pipes for the VM executable."
 

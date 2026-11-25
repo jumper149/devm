@@ -15,28 +15,28 @@ import System.Process qualified as Process
 type RequestDestroy :: Type
 data RequestDestroy = MkRequestDestroy
   { identifier :: VMID
+  , accessToken :: Text.Text
   , destroy :: Text.Text
   }
   deriving stock (Show)
 
 handleDestroy :: RequestDestroy -> HandlerM MCP.Server.Content
-handleDestroy MkRequestDestroy {identifier} = do
+handleDestroy MkRequestDestroy {identifier, accessToken} = do
   vms <- getVMState
   mRunning <- liftIO $ STM.atomically $ do
     pool <- STM.readTVar vms
     case lookupVMLock pool identifier of
-      Just (VMisAlreadyInUse running) -> do
-        STM.writeTVar vms $ setVMLock identifier VMisShuttingDown pool
-        pure $ Just running
+      Just (VMisAlreadyInUse running)
+        | MkVMAccessToken accessToken == runningAccessToken running -> do
+            STM.writeTVar vms $ setVMLock identifier VMisShuttingDown pool
+            pure $ Just running
       _ -> pure Nothing
   case mRunning of
     Nothing ->
-      pure $ MCP.Server.ContentText "ID is not in use."
+      invalidAccess
     Just running -> do
       liftIO $ Process.terminateProcess (runningProcess running)
       liftIO $ IO.hClose (runningInput running)
-      liftIO $ IO.hClose (runningOutput running)
-      liftIO $ IO.hClose (runningError running)
       liftIO $ STM.atomically $ do
         pool <- STM.readTVar vms
         case lookupVMLock pool identifier of

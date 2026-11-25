@@ -1,5 +1,6 @@
 module Devm.Server.Environment where
 
+import Control.Concurrent qualified as Concurrent
 import Control.Concurrent.STM qualified as STM
 import Control.Exception qualified as Exception
 import Control.Monad.IO.Class
@@ -8,6 +9,7 @@ import Data.Map qualified as Map
 import Data.Text qualified as Text
 import Devm.Server.Environment.Internal qualified as Internal
 import Devm.Server.VM
+import MCP.Server qualified
 import System.Exit qualified as Exit
 import System.Process qualified as Process
 
@@ -27,6 +29,11 @@ getLogRequests = Internal.logRequests <$> Internal.getEnvironment
 
 getLogVMs :: HandlerM Bool
 getLogVMs = Internal.logVMs <$> Internal.getEnvironment
+
+invalidAccess :: HandlerM MCP.Server.Content
+invalidAccess = do
+  liftIO $ Concurrent.threadDelay 200000
+  pure $ MCP.Server.ContentText "ID is not in use or access token is invalid."
 
 sshCommand :: VMID -> Text.Text -> HandlerM Text.Text
 sshCommand identifier command = do

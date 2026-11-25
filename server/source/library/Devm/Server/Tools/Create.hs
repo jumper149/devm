@@ -54,7 +54,13 @@ handleCreate MkRequestCreate {identifier} = do
           _ <- liftIO $ Concurrent.forkIO $ VMProcess.forwardError identifier logVMs running
           started <- liftIO $ STM.atomically $ STM.takeTMVar ready
           if started
-            then pure $ MCP.Server.ContentText $ "You are now using ID: " <> displayVMID identifier
+            then
+              pure $
+                MCP.Server.ContentText $
+                  "You are now using ID: "
+                    <> displayVMID identifier
+                    <> "\nAccess token: "
+                    <> displayAccessToken (runningAccessToken running)
             else do
               liftIO $ stopFailedVM vms identifier running
               pure $ MCP.Server.ContentText "VM did not report 'Started SSH Daemon' on stdout."
@@ -63,8 +69,6 @@ stopFailedVM :: STM.TVar VMPool -> VMID -> RunningVM -> IO ()
 stopFailedVM vms identifier running = do
   ignoreIOException $ Process.terminateProcess (runningProcess running)
   ignoreIOException $ IO.hClose (runningInput running)
-  ignoreIOException $ IO.hClose (runningOutput running)
-  ignoreIOException $ IO.hClose (runningError running)
   STM.atomically $ do
     pool <- STM.readTVar vms
     case lookupVMLock pool identifier of
