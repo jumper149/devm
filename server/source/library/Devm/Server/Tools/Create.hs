@@ -20,7 +20,6 @@ data RequestCreate = MkRequestCreate
 handleCreate :: RequestCreate -> HandlerM MCP.Server.Content
 handleCreate MkRequestCreate {identifier} = do
   vms <- getVMState
-  readyMarker <- getReadyMarker
   getVMExecutable identifier >>= \case
     Nothing ->
       pure $ MCP.Server.ContentText "ID does not exist."
@@ -42,6 +41,6 @@ handleCreate MkRequestCreate {identifier} = do
                 `Exception.onException` STM.atomically (STM.modifyTVar' vms (setVMLock identifier VMisFreeToUse))
           liftIO $ STM.atomically $ STM.modifyTVar' vms (setVMLock identifier (VMisAlreadyInUse running))
           _ <- liftIO $ Concurrent.forkIO $ VMProcess.monitorVM vms identifier running
-          _ <- liftIO $ Concurrent.forkIO $ VMProcess.forwardStartup identifier readyMarker running
+          _ <- liftIO $ Concurrent.forkIO $ VMProcess.forwardOutput identifier running
           _ <- liftIO $ Concurrent.forkIO $ VMProcess.forwardError identifier running
           pure $ MCP.Server.ContentText $ "You are now using ID: " <> displayVMID identifier

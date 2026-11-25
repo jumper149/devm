@@ -25,7 +25,6 @@ main = do
   IO.hSetBuffering IO.stdout IO.LineBuffering
   MkCommandLine
     { cliVMExecutables = executables@(MkVMExecutables {unVMExecutables = executablesMap})
-    , cliReadyMarker = readyMarker
     , cliSSHKey = sshKeyFile
     , cliHttpHost
     , cliHttpPort

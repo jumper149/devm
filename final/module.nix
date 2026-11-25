@@ -23,15 +23,6 @@ in
       '';
     };
 
-    readyMarker = lib.mkOption {
-      type = lib.types.str;
-      default = "";
-      description = ''
-        If non-empty, VM stdout is logged until a line containing this text
-        appears, and is discarded afterwards.
-      '';
-    };
-
     httpHost = lib.mkOption {
       type = lib.types.str;
       default = "localhost";
@@ -81,7 +72,6 @@ in
         ExecStart = lib.escapeShellArgs (
           [ "${cfg.package}/bin/devm-server" ]
           ++ lib.concatMap (executable: [ "--vm" executable ]) cfg.vmExecutables
-          ++ lib.optionals (cfg.readyMarker != "") [ "--ready" cfg.readyMarker ]
           ++ [ "--host" cfg.httpHost ]
           ++ [ "--port" (toString cfg.httpPort) ]
           ++ [ "--ssh-key" cfg.sshKey ]

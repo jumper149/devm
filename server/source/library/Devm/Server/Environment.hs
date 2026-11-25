@@ -22,9 +22,6 @@ getVMExecutable identifier = do
   MkVMExecutables executables <- Internal.executables <$> Internal.getEnvironment
   pure $ Map.lookup identifier executables
 
-getReadyMarker :: HandlerM Text.Text
-getReadyMarker = Internal.readyMarker <$> Internal.getEnvironment
-
 sshCommand :: VMID -> Text.Text -> HandlerM Text.Text
 sshCommand identifier command = do
   sshKeyFile <- Internal.sshKeyFile <$> Internal.getEnvironment
