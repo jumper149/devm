@@ -20,14 +20,7 @@ sshDaemonStartedMarker = "Started SSH Daemon"
 handleCreate :: HandlerM MCP.Server.Content
 handleCreate = do
   vms <- getVMState
-  reserved <- liftIO $ STM.atomically $ do
-    pool <- STM.readTVar vms
-    case findFreeVM pool of
-      Nothing ->
-        pure Nothing
-      Just identifier -> do
-        STM.writeTVar vms $ setVMLock identifier VMisStarting pool
-        pure $ Just identifier
+  reserved <- liftIO $ reserveRandomVM vms
   case reserved of
     Nothing ->
       pure $ MCP.Server.ContentText "No VM is available."

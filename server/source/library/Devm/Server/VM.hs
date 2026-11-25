@@ -8,7 +8,6 @@ import Control.Concurrent.STM qualified as STM
 import Data.Bits ((.&.), (.|.))
 import Data.Kind
 import Data.Map qualified as Map
-import Data.Maybe (listToMaybe)
 import Data.Text qualified as Text
 import Data.UUID.Types qualified as UUID
 import Data.Unique qualified as Unique
@@ -174,9 +173,48 @@ updateAccessTokenIndex identifier previousLock lock index =
     | expected == current = Nothing
     | otherwise = Just current
 
-findFreeVM :: VMPool -> Maybe VMID
-findFreeVM MkVMPool {unVMPool} =
-  listToMaybe [identifier | (identifier, VMisFreeToUse) <- Map.toList unVMPool]
+freeVMs :: VMPool -> [VMID]
+freeVMs MkVMPool {unVMPool} =
+  Map.foldrWithKey addFreeVM [] unVMPool
+ where
+  addFreeVM :: VMID -> VMLock -> [VMID] -> [VMID]
+  addFreeVM identifier lock identifiers =
+    case lock of
+      VMisFreeToUse ->
+        identifier : identifiers
+      VMisNotFreeToUse ->
+        identifiers
+
+findFreeVM :: VMPool -> IO (Maybe VMID)
+findFreeVM pool =
+  case freeVMs pool of
+    [] ->
+      pure Nothing
+    identifiers -> do
+      index <- Random.randomRIO (0, length identifiers - 1)
+      pure $ Just $ identifiers !! index
+
+reserveRandomVM :: STM.TVar VMPool -> IO (Maybe VMID)
+reserveRandomVM vms = do
+  pool <- STM.atomically $ STM.readTVar vms
+  mIdentifier <- findFreeVM pool
+  case mIdentifier of
+    Nothing ->
+      pure Nothing
+    Just identifier -> do
+      reserved <- STM.atomically $ do
+        current <- STM.readTVar vms
+        case lookupVMLock current identifier of
+          Just VMisFreeToUse -> do
+            STM.writeTVar vms $ setVMLock identifier VMisStarting current
+            pure True
+          Just VMisNotFreeToUse ->
+            pure False
+          Nothing ->
+            pure False
+      if reserved
+        then pure $ Just identifier
+        else reserveRandomVM vms
 
 lookupVMIDByAccessToken :: VMPool -> VMAccessToken -> Maybe VMID
 lookupVMIDByAccessToken MkVMPool {unVMAccessTokenIndex} accessToken =
