@@ -65,10 +65,24 @@ forwardOutput identifier marker ready running =
       else do
         line <- IO.hGetLine handle
         IO.putStrLn $ prefix <> line
-        Monad.when (marker `Text.isInfixOf` Text.pack line) $ do
+        Monad.when (marker `Text.isInfixOf` stripAnsi (Text.pack line)) $ do
           _ <- STM.atomically $ STM.tryPutTMVar ready True
           pure ()
         go
+
+stripAnsi :: Text.Text -> Text.Text
+stripAnsi = Text.pack . go . Text.unpack
+ where
+  go :: String -> String
+  go [] = []
+  go ('\ESC' : '[' : rest) = go $ dropCsi rest
+  go (char : rest) = char : go rest
+
+  dropCsi :: String -> String
+  dropCsi [] = []
+  dropCsi (char : rest)
+    | char >= '\x40' && char <= '\x7E' = rest
+    | otherwise = dropCsi rest
 
 forwardError :: VMID -> RunningVM -> IO ()
 forwardError identifier running =
