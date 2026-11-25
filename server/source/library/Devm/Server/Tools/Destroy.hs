@@ -13,9 +13,8 @@ import System.IO qualified as IO
 import System.Process qualified as Process
 
 type RequestDestroy :: Type
-data RequestDestroy = MkRequestDestroy
+newtype RequestDestroy = MkRequestDestroy
   { accessToken :: Text.Text
-  , destroy :: Text.Text
   }
   deriving stock (Show)
 
