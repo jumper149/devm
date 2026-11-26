@@ -20,35 +20,40 @@ handleCreate :: HandlerT IO MCP.Server.Content
 handleCreate = do
   vms <- getVMState
   generator <- lift Random.newStdGen
-  reserved <- lift $ STM.atomically $ reserveVM generator vms
-  case reserved of
-    Nothing ->
-      pure $ MCP.Server.ContentText "No VM is available."
-    Just identifier ->
-      getVMExecutable identifier >>= \case
-        Nothing -> do
-          lift $ STM.atomically $ STM.modifyTVar' vms (setVMLock identifier VMisFreeToUse)
-          pure $ MCP.Server.ContentText "VM does not exist."
-        Just executable -> do
-          running <-
-            lift $
-              VMProcess.startVM executable
-                `Exception.onException` STM.atomically (STM.modifyTVar' vms (setVMLock identifier VMisFreeToUse))
-          lift $ STM.atomically $ STM.modifyTVar' vms (setVMLock identifier (VMisAlreadyInUse running))
-          ready <- lift STM.newEmptyTMVarIO
-          logVMs <- getLogVMs
-          _ <- lift $ Concurrent.forkIO $ VMProcess.monitorVM vms identifier running
-          _ <- lift $ Concurrent.forkIO $ VMProcess.forwardOutput identifier sshDaemonStartedMarker ready logVMs running
-          _ <- lift $ Concurrent.forkIO $ VMProcess.forwardError identifier logVMs running
-          started <- lift $ STM.atomically $ STM.takeTMVar ready
-          if started
-            then
-              pure $
-                MCP.Server.ContentText $
-                  "Access token: " <> displayAccessToken (runningAccessToken running)
-            else do
-              lift $ stopFailedVM vms identifier running
-              pure $ MCP.Server.ContentText "VM did not report 'Started SSH Daemon' on stdout."
+  eResult <- mapHandlerT STM.atomically $ do
+    pool <- lift $ STM.readTVar vms
+    case findFreeVM generator pool of
+      Nothing ->
+        pure $ Left $ MCP.Server.ContentText "No VM is available."
+      Just identifier ->
+        getVMExecutable identifier >>= \case
+          Nothing ->
+            pure $ Left $ MCP.Server.ContentText "VM does not exist."
+          Just executable -> do
+            lift $ STM.writeTVar vms $ setVMLock identifier VMisStarting pool
+            pure $ Right (identifier, executable)
+  case eResult of
+    Left result -> pure result
+    Right (identifier, executable) -> do
+      running <-
+        lift $
+          VMProcess.startVM executable
+            `Exception.onException` STM.atomically (STM.modifyTVar' vms (setVMLock identifier VMisFreeToUse))
+      lift $ STM.atomically $ STM.modifyTVar' vms (setVMLock identifier (VMisAlreadyInUse running))
+      ready <- lift STM.newEmptyTMVarIO
+      logVMs <- getLogVMs
+      _ <- lift $ Concurrent.forkIO $ VMProcess.monitorVM vms identifier running
+      _ <- lift $ Concurrent.forkIO $ VMProcess.forwardOutput identifier sshDaemonStartedMarker ready logVMs running
+      _ <- lift $ Concurrent.forkIO $ VMProcess.forwardError identifier logVMs running
+      started <- lift $ STM.atomically $ STM.takeTMVar ready
+      if started
+        then
+          pure $
+            MCP.Server.ContentText $
+              "Access token: " <> displayAccessToken (runningAccessToken running)
+        else do
+          lift $ stopFailedVM vms identifier running
+          pure $ MCP.Server.ContentText "VM did not report 'Started SSH Daemon' on stdout."
 
 sshDaemonStartedMarker :: Text.Text
 sshDaemonStartedMarker = "Started SSH Daemon"
@@ -73,16 +78,6 @@ findFreeVM generator pool =
     identifiers ->
       let (index, _) = Random.uniformR (0, length identifiers - 1) generator
        in Just $ identifiers !! index
-
-reserveVM :: Random.StdGen -> STM.TVar VMPool -> STM.STM (Maybe VMID)
-reserveVM generator vms = do
-  pool <- STM.readTVar vms
-  case findFreeVM generator pool of
-    Nothing ->
-      pure Nothing
-    Just identifier -> do
-      STM.writeTVar vms $ setVMLock identifier VMisStarting pool
-      pure $ Just identifier
 
 stopFailedVM :: STM.TVar VMPool -> VMID -> RunningVM -> IO ()
 stopFailedVM vms identifier running = do

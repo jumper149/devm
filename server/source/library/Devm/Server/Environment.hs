@@ -5,6 +5,7 @@ import Control.Concurrent.STM qualified as STM
 import Control.Exception qualified as Exception
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
+import Control.Monad.Trans.Reader
 import Data.Kind
 import Data.Map qualified as Map
 import Data.Text qualified as Text
@@ -16,6 +17,9 @@ import System.Process qualified as Process
 
 type HandlerT :: (Type -> Type) -> (Type -> Type)
 type HandlerT = Internal.HandlerT
+
+mapHandlerT :: (m a -> n b) -> HandlerT m a -> HandlerT n b
+mapHandlerT f = Internal.MkHandlerT . mapReaderT f . Internal.unHandlerT
 
 getVMState :: Monad m => HandlerT m (STM.TVar VMPool)
 getVMState = Internal.vms <$> Internal.getEnvironment
@@ -74,13 +78,14 @@ sshCommand identifier command = do
     sshArguments = sshOptions <> ["dev@devm", "--", Text.unpack command]
 
   result <-
-    lift $ liftIO $
-      Exception.catch
-        (Process.readProcessWithExitCode "ssh" sshArguments "")
-        ( \err -> do
-            let message = "Could not run ssh: " <> show (err :: Exception.IOException)
-            pure (Exit.ExitFailure 1, "", message)
-        )
+    lift $
+      liftIO $
+        Exception.catch
+          (Process.readProcessWithExitCode "ssh" sshArguments "")
+          ( \err -> do
+              let message = "Could not run ssh: " <> show (err :: Exception.IOException)
+              pure (Exit.ExitFailure 1, "", message)
+          )
   pure $ formatResult result
  where
   formatResult :: (Exit.ExitCode, String, String) -> Text.Text
