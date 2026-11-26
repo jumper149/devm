@@ -3,6 +3,7 @@ module Devm.Server.VM.Process where
 import Control.Concurrent.STM qualified as STM
 import Control.Exception qualified as Exception
 import Control.Monad qualified as Monad
+import Data.Kind
 import Data.Text qualified as Text
 import Data.Unique qualified as Unique
 import Devm.Server.VM
@@ -44,7 +45,13 @@ monitorVM vms identifier running = do
       Nothing ->
         pure ()
 
-forwardOutput :: VMID -> Text.Text -> STM.TMVar Bool -> Bool -> RunningVM -> IO ()
+type StartupResult :: Type
+data StartupResult
+  = SSHDaemonStarted
+  | OutputEnded
+  | OutputFailed Exception.IOException
+
+forwardOutput :: VMID -> Text.Text -> STM.TMVar StartupResult -> Bool -> RunningVM -> IO ()
 forwardOutput identifier marker ready logVMs running =
   go `Exception.catch` onError
  where
@@ -54,24 +61,24 @@ forwardOutput identifier marker ready logVMs running =
   handle :: IO.Handle
   handle = runningOutput running
 
-  finish :: Bool -> IO ()
-  finish started = do
-    _ <- STM.atomically $ STM.tryPutTMVar ready started
+  finish :: StartupResult -> IO ()
+  finish result = do
+    _ <- STM.atomically $ STM.tryPutTMVar ready result
     IO.hClose handle `Exception.catch` ignoreIOError
 
   onError :: Exception.IOException -> IO ()
-  onError _ = finish False
+  onError = finish . OutputFailed
 
   go :: IO ()
   go = do
     eof <- IO.hIsEOF handle
     if eof
-      then finish False
+      then finish OutputEnded
       else do
         line <- IO.hGetLine handle
         Monad.when logVMs $ IO.putStrLn $ prefix <> line
         Monad.when (marker `Text.isInfixOf` stripAnsi (Text.pack line)) $ do
-          _ <- STM.atomically $ STM.tryPutTMVar ready True
+          _ <- STM.atomically $ STM.tryPutTMVar ready SSHDaemonStarted
           pure ()
         go
 

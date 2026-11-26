@@ -113,6 +113,13 @@ pattern VMisNotShuttingDown <-
       Just _
     )
 
+displayVMLockState :: VMLock -> Text.Text
+displayVMLockState = \case
+  VMisFreeToUse -> "FreeToUse"
+  VMisStarting _ -> "Starting"
+  VMisAlreadyInUse _ -> "AlreadyInUse"
+  VMisShuttingDown _ -> "ShuttingDown"
+
 type VMExecutable :: Type
 data VMExecutable = MkVMExecutable Text.Text
 
@@ -132,6 +139,12 @@ initializeVMPool identifiers =
       { unVMPool = Map.fromList $ (,VMisFreeToUse) <$> identifiers
       , unVMAccessTokenIndex = Map.empty
       }
+
+displayVMPool :: VMPool -> Text.Text
+displayVMPool MkVMPool {unVMPool} = "{ " <> Map.foldMapWithKey displayEntry unVMPool <> "}"
+ where
+  displayEntry :: VMID -> VMLock -> Text.Text
+  displayEntry k v = displayVMID k <> ": " <> displayVMLockState v <> "; "
 
 lookupVMLock :: VMPool -> VMID -> Maybe VMLock
 lookupVMLock MkVMPool {unVMPool} identifier =

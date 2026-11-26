@@ -53,14 +53,21 @@ handleCreate = do
       _ <- lift $ Concurrent.forkIO $ VMProcess.forwardOutput identifier sshDaemonStartedMarker ready logVMs running
       _ <- lift $ Concurrent.forkIO $ VMProcess.forwardError identifier logVMs running
       continueWithIO <- mapHandlerT STM.atomically $ continueStartup vms identifier lockStartupToken $ do
-        started <- lift $ STM.takeTMVar ready
-        if started
-          then do
+        result <- lift $ STM.takeTMVar ready
+        let failed msg = do
+              pool <- lift $ STM.readTVar vms
+              pure $ do
+                putStrLn $ "VM failed to start (" <> msg <> "): " <> Text.unpack (displayVMPool pool)
+                stopFailedVM vms identifier lockStartupToken running
+                pure $ MCP.Server.ContentText "Error: VM failed to start."
+        case result of
+          VMProcess.SSHDaemonStarted -> do
             lift $ STM.modifyTVar' vms (setVMLock identifier (VMisAlreadyInUse running))
             pure $ pure $ MCP.Server.ContentText $ "Access token: " <> displayAccessToken (runningAccessToken running)
-          else pure $ do
-            stopFailedVM vms identifier lockStartupToken running
-            pure $ MCP.Server.ContentText "Error: VM failed to start."
+          VMProcess.OutputEnded ->
+            failed "Output ended"
+          VMProcess.OutputFailed err ->
+            failed $ "Output failed: " <> show err
       lift continueWithIO
 
 sshDaemonStartedMarker :: Text.Text
