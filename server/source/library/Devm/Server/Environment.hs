@@ -38,7 +38,7 @@ getLogVMs = Internal.logVMs <$> Internal.getEnvironment
 invalidAccess :: MonadIO m => HandlerT m MCP.Server.Content
 invalidAccess = do
   lift $ liftIO $ Concurrent.threadDelay 200000
-  pure $ MCP.Server.ContentText "ID is not in use or access token is invalid."
+  pure $ MCP.Server.ContentText "Error: Access token is invalid. There is no running VM, that can be accessed with that token."
 
 sshCommand :: MonadIO m => VMID -> Text.Text -> HandlerT m Text.Text
 sshCommand identifier command = do

@@ -27,11 +27,11 @@ handleCreate = do
     pool <- lift $ STM.readTVar vms
     case findFreeVM generator pool of
       Nothing ->
-        pure $ Left $ MCP.Server.ContentText "No VM is available."
+        pure $ Left $ MCP.Server.ContentText "Error: No VM is available at this time."
       Just identifier ->
         getVMExecutable identifier >>= \case
           Nothing ->
-            pure $ Left $ MCP.Server.ContentText "VM does not exist."
+            error "A VM, that was just found as free to use should not just disapper."
           Just executable -> do
             lift $ STM.writeTVar vms $ setVMLock identifier lockStartup pool
             pure $ Right (identifier, executable)
@@ -56,7 +56,7 @@ handleCreate = do
               "Access token: " <> displayAccessToken (runningAccessToken running)
         else do
           lift $ stopFailedVM vms identifier running
-          pure $ MCP.Server.ContentText "VM did not report 'Started SSH Daemon' on stdout."
+          pure $ MCP.Server.ContentText "Error: VM failed to start."
 
 sshDaemonStartedMarker :: Text.Text
 sshDaemonStartedMarker = "Started SSH Daemon"

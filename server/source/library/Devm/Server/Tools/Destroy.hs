@@ -45,7 +45,7 @@ handleDestroy MkRequestDestroy {accessToken} = do
             if token == lockShutdownToken
               then do
                 lift $ STM.writeTVar vms $ setVMLock identifier VMisFreeToUse pool
-                pure $ MCP.Server.ContentText "Destroyed"
+                pure $ MCP.Server.ContentText "Destroyed VM."
               else error "Another actor tries to shutdown."
           Just VMisNotShuttingDown ->
             error "Another actor changed ignored the shutting-down state and modified it."
