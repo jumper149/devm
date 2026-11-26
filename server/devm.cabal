@@ -57,6 +57,7 @@ common dependencies
     , stm
     , text
     , transformers
+    , unix
     , uuid-types
 
 library
