@@ -17,6 +17,7 @@ import MCP.Server qualified
 import System.IO qualified as IO
 import System.Process qualified as Process
 import System.Random qualified as Random
+import System.Timeout qualified as Timeout
 
 handleCreate :: HandlerT IO MCP.Server.Content
 handleCreate = do
@@ -52,26 +53,31 @@ handleCreate = do
       _ <- lift $ Concurrent.forkIO $ VMProcess.monitorVM vms identifier running
       _ <- lift $ Concurrent.forkIO $ VMProcess.forwardOutput identifier sshDaemonStartedMarker ready logVMs running
       _ <- lift $ Concurrent.forkIO $ VMProcess.forwardError identifier logVMs running
+      mResult <- lift $ Timeout.timeout startupTimeout $ STM.atomically $ STM.readTMVar ready
       continueWithIO <- mapHandlerT STM.atomically $ continueStartup vms identifier lockStartupToken $ do
-        result <- lift $ STM.takeTMVar ready
         let failed msg = do
               pool <- lift $ STM.readTVar vms
               pure $ do
                 putStrLn $ "VM failed to start (" <> msg <> "): " <> Text.unpack (displayVMPool pool)
                 stopFailedVM vms identifier lockStartupToken running
                 pure $ MCP.Server.ContentText "Error: VM failed to start."
-        case result of
-          VMProcess.SSHDaemonStarted -> do
+        case mResult of
+          Nothing ->
+            failed "Startup timed out"
+          Just VMProcess.SSHDaemonStarted -> do
             lift $ STM.modifyTVar' vms (setVMLock identifier (VMisAlreadyInUse running))
             pure $ pure $ MCP.Server.ContentText $ "Access token: " <> displayAccessToken (runningAccessToken running)
-          VMProcess.OutputEnded ->
+          Just VMProcess.OutputEnded ->
             failed "Output ended"
-          VMProcess.OutputFailed err ->
+          Just (VMProcess.OutputFailed err) ->
             failed $ "Output failed: " <> show err
       lift continueWithIO
 
 sshDaemonStartedMarker :: Text.Text
 sshDaemonStartedMarker = "Started SSH Daemon"
+
+startupTimeout :: Int
+startupTimeout = 30_000_000
 
 freeVMs :: VMPool -> [VMID]
 freeVMs MkVMPool {unVMPool} =
