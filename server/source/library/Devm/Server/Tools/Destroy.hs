@@ -6,6 +6,7 @@ import Control.Concurrent.STM qualified as STM
 import Control.Monad.Trans.Class
 import Data.Kind
 import Data.Text qualified as Text
+import Data.Unique
 import Devm.Server.Environment
 import Devm.Server.VM
 import MCP.Server qualified
@@ -20,28 +21,33 @@ newtype RequestDestroy = MkRequestDestroy
 
 handleDestroy :: RequestDestroy -> HandlerT IO MCP.Server.Content
 handleDestroy MkRequestDestroy {accessToken} = do
-  vms <- getVMState
-  mRunning <- lift $ STM.atomically $ do
-    pool <- STM.readTVar vms
+  lockShutdownToken <- lift newUnique
+  mRunning <- mapHandlerT STM.atomically $ do
+    vms <- getVMState
+    pool <- lift $ STM.readTVar vms
     case lookupRunningVMByAccessToken pool (MkVMAccessToken accessToken) of
-      Just (identifier, running) -> do
-        STM.writeTVar vms $ setVMLock identifier VMisShuttingDown pool
-        pure $ Just (identifier, running)
       Nothing ->
         pure Nothing
+      Just (identifier, running) -> do
+        lift $ STM.writeTVar vms $ setVMLock identifier (VMisShuttingDown lockShutdownToken) pool
+        pure $ Just (identifier, running)
   case mRunning of
     Nothing ->
       invalidAccess
     Just (identifier, running) -> do
       lift $ Process.terminateProcess (runningProcess running)
       lift $ IO.hClose (runningInput running)
-      lift $ STM.atomically $ do
-        pool <- STM.readTVar vms
+      mapHandlerT STM.atomically $ do
+        vms <- getVMState
+        pool <- lift $ STM.readTVar vms
         case lookupVMLock pool identifier of
-          Just VMisShuttingDown ->
-            STM.writeTVar vms $ setVMLock identifier VMisFreeToUse pool
+          Just (VMisShuttingDown token) ->
+            if token == lockShutdownToken
+              then do
+                lift $ STM.writeTVar vms $ setVMLock identifier VMisFreeToUse pool
+                pure $ MCP.Server.ContentText "Destroyed"
+              else error "Another actor tries to shutdown."
           Just VMisNotShuttingDown ->
-            pure ()
+            error "Another actor changed ignored the shutting-down state and modified it."
           Nothing ->
-            pure ()
-      pure $ MCP.Server.ContentText "Destroyed"
+            error "Another actor already removed this VM from the pool."

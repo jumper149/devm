@@ -73,9 +73,9 @@ runningError MkRunningVM {vmError} = vmError
 type VMLock :: Type
 data VMLock
   = VMisFreeToUse
-  | VMisStarting
+  | VMisStarting Unique.Unique
   | VMisAlreadyInUse RunningVM
-  | VMisShuttingDown
+  | VMisShuttingDown Unique.Unique
 
 {-# COMPLETE VMisFreeToUse, VMisNotFreeToUse #-}
 pattern VMisNotFreeToUse :: VMLock
@@ -90,7 +90,7 @@ pattern VMisNotFreeToUse <-
 pattern VMisNotStarting :: VMLock
 pattern VMisNotStarting <-
   ( \case
-      VMisStarting -> Nothing
+      VMisStarting _ -> Nothing
       x -> Just x ->
       Just _
     )
@@ -108,7 +108,7 @@ pattern VMisNotAlreadyInUse <-
 pattern VMisNotShuttingDown :: VMLock
 pattern VMisNotShuttingDown <-
   ( \case
-      VMisShuttingDown -> Nothing
+      VMisShuttingDown _ -> Nothing
       x -> Just x ->
       Just _
     )

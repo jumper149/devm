@@ -8,6 +8,7 @@ import Control.Exception qualified as Exception
 import Control.Monad.Trans.Class
 import Data.Map qualified as Map
 import Data.Text qualified as Text
+import Data.Unique
 import Devm.Server.Environment
 import Devm.Server.VM
 import Devm.Server.VM.Process qualified as VMProcess
@@ -19,6 +20,8 @@ import System.Random qualified as Random
 handleCreate :: HandlerT IO MCP.Server.Content
 handleCreate = do
   vms <- getVMState
+  lockStartupToken <- lift newUnique
+  let lockStartup = VMisShuttingDown lockStartupToken
   generator <- lift Random.newStdGen
   eResult <- mapHandlerT STM.atomically $ do
     pool <- lift $ STM.readTVar vms
@@ -30,7 +33,7 @@ handleCreate = do
           Nothing ->
             pure $ Left $ MCP.Server.ContentText "VM does not exist."
           Just executable -> do
-            lift $ STM.writeTVar vms $ setVMLock identifier VMisStarting pool
+            lift $ STM.writeTVar vms $ setVMLock identifier lockStartup pool
             pure $ Right (identifier, executable)
   case eResult of
     Left result -> pure result
