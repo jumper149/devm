@@ -5,7 +5,7 @@ module Devm.Server.Tools.Create where
 import Control.Concurrent qualified as Concurrent
 import Control.Concurrent.STM qualified as STM
 import Control.Exception qualified as Exception
-import Control.Monad.IO.Class
+import Control.Monad.Trans.Class
 import Data.Map qualified as Map
 import Data.Text qualified as Text
 import Devm.Server.Environment
@@ -16,38 +16,38 @@ import System.IO qualified as IO
 import System.Process qualified as Process
 import System.Random qualified as Random
 
-handleCreate :: HandlerM MCP.Server.Content
+handleCreate :: HandlerT IO MCP.Server.Content
 handleCreate = do
   vms <- getVMState
-  generator <- liftIO Random.newStdGen
-  reserved <- liftIO $ STM.atomically $ reserveVM generator vms
+  generator <- lift Random.newStdGen
+  reserved <- lift $ STM.atomically $ reserveVM generator vms
   case reserved of
     Nothing ->
       pure $ MCP.Server.ContentText "No VM is available."
     Just identifier ->
       getVMExecutable identifier >>= \case
         Nothing -> do
-          liftIO $ STM.atomically $ STM.modifyTVar' vms (setVMLock identifier VMisFreeToUse)
+          lift $ STM.atomically $ STM.modifyTVar' vms (setVMLock identifier VMisFreeToUse)
           pure $ MCP.Server.ContentText "VM does not exist."
         Just executable -> do
           running <-
-            liftIO $
+            lift $
               VMProcess.startVM executable
                 `Exception.onException` STM.atomically (STM.modifyTVar' vms (setVMLock identifier VMisFreeToUse))
-          liftIO $ STM.atomically $ STM.modifyTVar' vms (setVMLock identifier (VMisAlreadyInUse running))
-          ready <- liftIO STM.newEmptyTMVarIO
+          lift $ STM.atomically $ STM.modifyTVar' vms (setVMLock identifier (VMisAlreadyInUse running))
+          ready <- lift STM.newEmptyTMVarIO
           logVMs <- getLogVMs
-          _ <- liftIO $ Concurrent.forkIO $ VMProcess.monitorVM vms identifier running
-          _ <- liftIO $ Concurrent.forkIO $ VMProcess.forwardOutput identifier sshDaemonStartedMarker ready logVMs running
-          _ <- liftIO $ Concurrent.forkIO $ VMProcess.forwardError identifier logVMs running
-          started <- liftIO $ STM.atomically $ STM.takeTMVar ready
+          _ <- lift $ Concurrent.forkIO $ VMProcess.monitorVM vms identifier running
+          _ <- lift $ Concurrent.forkIO $ VMProcess.forwardOutput identifier sshDaemonStartedMarker ready logVMs running
+          _ <- lift $ Concurrent.forkIO $ VMProcess.forwardError identifier logVMs running
+          started <- lift $ STM.atomically $ STM.takeTMVar ready
           if started
             then
               pure $
                 MCP.Server.ContentText $
                   "Access token: " <> displayAccessToken (runningAccessToken running)
             else do
-              liftIO $ stopFailedVM vms identifier running
+              lift $ stopFailedVM vms identifier running
               pure $ MCP.Server.ContentText "VM did not report 'Started SSH Daemon' on stdout."
 
 sshDaemonStartedMarker :: Text.Text

@@ -1,7 +1,7 @@
 module Devm.Server.Environment.Internal where
 
 import Control.Concurrent.STM qualified as STM
-import Control.Monad.IO.Class
+import Control.Monad.Trans.Class
 import Control.Monad.Trans.Reader
 import Data.Kind
 import Devm.Server.VM
@@ -15,12 +15,12 @@ data HandlerEnvironment = MkHandlerEnvironment
   , logVMs :: Bool
   }
 
-type HandlerM :: Type -> Type
-newtype HandlerM a = MkHandlerM {unHandlerM :: ReaderT HandlerEnvironment IO a}
-  deriving newtype (Functor, Applicative, Monad, MonadIO)
+type HandlerT :: (Type -> Type) -> (Type -> Type)
+newtype HandlerT m a = MkHandlerT {unHandlerT :: ReaderT HandlerEnvironment m a}
+  deriving newtype (Functor, Applicative, Monad, MonadTrans)
 
-runHandlerM :: HandlerEnvironment -> HandlerM a -> IO a
-runHandlerM env MkHandlerM {unHandlerM} = runReaderT unHandlerM env
+runHandlerT :: HandlerEnvironment -> HandlerT m a -> m a
+runHandlerT env = (`runReaderT` env) . unHandlerT
 
-getEnvironment :: HandlerM HandlerEnvironment
-getEnvironment = MkHandlerM ask
+getEnvironment :: Monad m => HandlerT m HandlerEnvironment
+getEnvironment = MkHandlerT ask

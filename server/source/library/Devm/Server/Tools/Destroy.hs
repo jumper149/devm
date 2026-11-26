@@ -3,7 +3,7 @@
 module Devm.Server.Tools.Destroy where
 
 import Control.Concurrent.STM qualified as STM
-import Control.Monad.IO.Class
+import Control.Monad.Trans.Class
 import Data.Kind
 import Data.Text qualified as Text
 import Devm.Server.Environment
@@ -18,10 +18,10 @@ newtype RequestDestroy = MkRequestDestroy
   }
   deriving stock (Show)
 
-handleDestroy :: RequestDestroy -> HandlerM MCP.Server.Content
+handleDestroy :: RequestDestroy -> HandlerT IO MCP.Server.Content
 handleDestroy MkRequestDestroy {accessToken} = do
   vms <- getVMState
-  mRunning <- liftIO $ STM.atomically $ do
+  mRunning <- lift $ STM.atomically $ do
     pool <- STM.readTVar vms
     case lookupRunningVMByAccessToken pool (MkVMAccessToken accessToken) of
       Just (identifier, running) -> do
@@ -33,9 +33,9 @@ handleDestroy MkRequestDestroy {accessToken} = do
     Nothing ->
       invalidAccess
     Just (identifier, running) -> do
-      liftIO $ Process.terminateProcess (runningProcess running)
-      liftIO $ IO.hClose (runningInput running)
-      liftIO $ STM.atomically $ do
+      lift $ Process.terminateProcess (runningProcess running)
+      lift $ IO.hClose (runningInput running)
+      lift $ STM.atomically $ do
         pool <- STM.readTVar vms
         case lookupVMLock pool identifier of
           Just VMisShuttingDown ->

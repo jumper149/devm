@@ -3,7 +3,7 @@
 module Devm.Server.Tools.Command where
 
 import Control.Concurrent.STM qualified as STM
-import Control.Monad.IO.Class
+import Control.Monad.Trans.Class
 import Data.Kind
 import Data.Text qualified as Text
 import Devm.Server.Environment
@@ -17,10 +17,10 @@ data RequestCommand = MkRequestCommand
   }
   deriving stock (Show)
 
-handleCommand :: RequestCommand -> HandlerM MCP.Server.Content
+handleCommand :: RequestCommand -> HandlerT IO MCP.Server.Content
 handleCommand MkRequestCommand {accessToken, command} = do
   vms <- getVMState
-  authorized <- liftIO $ STM.atomically $ do
+  authorized <- lift $ STM.atomically $ do
     pool <- STM.readTVar vms
     pure $ lookupRunningVMByAccessToken pool (MkVMAccessToken accessToken)
   case authorized of

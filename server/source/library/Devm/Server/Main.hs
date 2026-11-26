@@ -35,6 +35,6 @@ main = do
   vms <- initializeVMPool $ Map.keys executablesMap
   let httpConfig = MCP.Server.defaultHttpConfig {MCP.Server.httpHost = cliHttpHost, MCP.Server.httpPort = cliHttpPort}
   let environment = Internal.MkHandlerEnvironment {..}
-  let tool ctx request = Internal.runHandlerM environment (handleTool ctx request)
+  let tool ctx request = Internal.runHandlerT environment (handleTool ctx request)
   let handlers = MCP.Server.noHandlers {MCP.Server.tools = Just $(MCP.Server.Derive.deriveToolHandler ''Tool 'tool)}
   MCP.Server.runMcpServerHttpWithConfig httpConfig info handlers

@@ -4,6 +4,7 @@ import Control.Concurrent qualified as Concurrent
 import Control.Concurrent.STM qualified as STM
 import Control.Exception qualified as Exception
 import Control.Monad.IO.Class
+import Control.Monad.Trans.Class
 import Data.Kind
 import Data.Map qualified as Map
 import Data.Text qualified as Text
@@ -13,29 +14,29 @@ import MCP.Server qualified
 import System.Exit qualified as Exit
 import System.Process qualified as Process
 
-type HandlerM :: Type -> Type
-type HandlerM = Internal.HandlerM
+type HandlerT :: (Type -> Type) -> (Type -> Type)
+type HandlerT = Internal.HandlerT
 
-getVMState :: HandlerM (STM.TVar VMPool)
+getVMState :: Monad m => HandlerT m (STM.TVar VMPool)
 getVMState = Internal.vms <$> Internal.getEnvironment
 
-getVMExecutable :: VMID -> HandlerM (Maybe VMExecutable)
+getVMExecutable :: Monad m => VMID -> HandlerT m (Maybe VMExecutable)
 getVMExecutable identifier = do
   MkVMExecutables executables <- Internal.executables <$> Internal.getEnvironment
   pure $ Map.lookup identifier executables
 
-getLogRequests :: HandlerM Bool
+getLogRequests :: Monad m => HandlerT m Bool
 getLogRequests = Internal.logRequests <$> Internal.getEnvironment
 
-getLogVMs :: HandlerM Bool
+getLogVMs :: Monad m => HandlerT m Bool
 getLogVMs = Internal.logVMs <$> Internal.getEnvironment
 
-invalidAccess :: HandlerM MCP.Server.Content
+invalidAccess :: MonadIO m => HandlerT m MCP.Server.Content
 invalidAccess = do
-  liftIO $ Concurrent.threadDelay 200000
+  lift $ liftIO $ Concurrent.threadDelay 200000
   pure $ MCP.Server.ContentText "ID is not in use or access token is invalid."
 
-sshCommand :: VMID -> Text.Text -> HandlerM Text.Text
+sshCommand :: MonadIO m => VMID -> Text.Text -> HandlerT m Text.Text
 sshCommand identifier command = do
   sshKeyFile <- Internal.sshKeyFile <$> Internal.getEnvironment
   let
@@ -73,7 +74,7 @@ sshCommand identifier command = do
     sshArguments = sshOptions <> ["dev@devm", "--", Text.unpack command]
 
   result <-
-    liftIO $
+    lift $ liftIO $
       Exception.catch
         (Process.readProcessWithExitCode "ssh" sshArguments "")
         ( \err -> do

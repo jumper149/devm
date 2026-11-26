@@ -1,7 +1,7 @@
 module Devm.Server.Tools where
 
 import Control.Monad qualified as Monad
-import Control.Monad.IO.Class
+import Control.Monad.Trans.Class
 import Data.Kind
 import Devm.Server.Environment
 import Devm.Server.Tools.Command
@@ -16,13 +16,13 @@ data Tool
   | Destroy RequestDestroy
   deriving stock (Show)
 
-handleTool :: MCP.Server.ClientContext -> Tool -> HandlerM MCP.Server.Content
+handleTool :: MCP.Server.ClientContext -> Tool -> HandlerT IO MCP.Server.Content
 handleTool _ctx tool = do
   logRequests <- getLogRequests
-  Monad.when logRequests $ liftIO $ putStrLn $ "Handling tool: " <> show tool
+  Monad.when logRequests $ lift $ putStrLn $ "Handling tool: " <> show tool
   response <- case tool of
     Create -> handleCreate
     Command request -> handleCommand request
     Destroy request -> handleDestroy request
-  Monad.when logRequests $ liftIO $ putStrLn $ "Responding to tool (" <> show tool <> "): " <> take 100 (show response)
+  Monad.when logRequests $ lift $ putStrLn $ "Responding to tool (" <> show tool <> "): " <> take 100 (show response)
   pure response
