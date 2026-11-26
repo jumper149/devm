@@ -5,6 +5,7 @@ module Devm.Server.Tools.Create where
 import Control.Concurrent qualified as Concurrent
 import Control.Concurrent.STM qualified as STM
 import Control.Exception qualified as Exception
+import Control.Monad.Catch
 import Control.Monad.Trans.Class
 import Data.Map qualified as Map
 import Data.Text qualified as Text
@@ -21,7 +22,7 @@ handleCreate :: HandlerT IO MCP.Server.Content
 handleCreate = do
   vms <- getVMState
   lockStartupToken <- lift newUnique
-  let lockStartup = VMisShuttingDown lockStartupToken
+  let lockStartup = VMisStarting lockStartupToken
   generator <- lift Random.newStdGen
   eResult <- mapHandlerT STM.atomically $ do
     pool <- lift $ STM.readTVar vms
@@ -38,25 +39,29 @@ handleCreate = do
   case eResult of
     Left result -> pure result
     Right (identifier, executable) -> do
+      let
+        rollback :: HandlerT STM.STM ()
+        rollback = do
+          pool <- lift $ STM.readTVar vms
+          lift $ STM.writeTVar vms $ setVMLock identifier VMisFreeToUse pool
       running <-
-        lift $
-          VMProcess.startVM executable
-            `Exception.onException` STM.atomically (STM.modifyTVar' vms (setVMLock identifier VMisFreeToUse))
-      lift $ STM.atomically $ STM.modifyTVar' vms (setVMLock identifier (VMisAlreadyInUse running))
+        lift (VMProcess.startVM executable)
+          `onException` mapHandlerT STM.atomically (continueStartup vms identifier lockStartupToken rollback)
       ready <- lift STM.newEmptyTMVarIO
       logVMs <- getLogVMs
       _ <- lift $ Concurrent.forkIO $ VMProcess.monitorVM vms identifier running
       _ <- lift $ Concurrent.forkIO $ VMProcess.forwardOutput identifier sshDaemonStartedMarker ready logVMs running
       _ <- lift $ Concurrent.forkIO $ VMProcess.forwardError identifier logVMs running
-      started <- lift $ STM.atomically $ STM.takeTMVar ready
-      if started
-        then
-          pure $
-            MCP.Server.ContentText $
-              "Access token: " <> displayAccessToken (runningAccessToken running)
-        else do
-          lift $ stopFailedVM vms identifier running
-          pure $ MCP.Server.ContentText "Error: VM failed to start."
+      continueWithIO <- mapHandlerT STM.atomically $ continueStartup vms identifier lockStartupToken $ do
+        started <- lift $ STM.takeTMVar ready
+        if started
+          then do
+            lift $ STM.modifyTVar' vms (setVMLock identifier (VMisAlreadyInUse running))
+            pure $ pure $ MCP.Server.ContentText $ "Access token: " <> displayAccessToken (runningAccessToken running)
+          else pure $ do
+            stopFailedVM vms identifier lockStartupToken running
+            pure $ MCP.Server.ContentText "Error: VM failed to start."
+      lift continueWithIO
 
 sshDaemonStartedMarker :: Text.Text
 sshDaemonStartedMarker = "Started SSH Daemon"
@@ -82,22 +87,34 @@ findFreeVM generator pool =
       let (index, _) = Random.uniformR (0, length identifiers - 1) generator
        in Just $ identifiers !! index
 
-stopFailedVM :: STM.TVar VMPool -> VMID -> RunningVM -> IO ()
-stopFailedVM vms identifier running = do
+continueStartup :: STM.TVar VMPool -> VMID -> Unique -> HandlerT STM.STM a -> HandlerT STM.STM a
+continueStartup vms identifier token continue = do
+  pool <- lift $ STM.readTVar vms
+  case lookupVMLock pool identifier of
+    Just (VMisStarting current) ->
+      if current == token
+        then continue
+        else error "Another startup owns this VM."
+    Just VMisNotStarting ->
+      error "Another actor changed the starting state."
+    Nothing ->
+      error "Another actor removed this VM from the pool."
+
+stopFailedVM :: STM.TVar VMPool -> VMID -> Unique -> RunningVM -> IO ()
+stopFailedVM vms identifier token running = do
   ignoreIOException $ Process.terminateProcess (runningProcess running)
   ignoreIOException $ IO.hClose (runningInput running)
   STM.atomically $ do
     pool <- STM.readTVar vms
     case lookupVMLock pool identifier of
-      Just (VMisAlreadyInUse current)
-        | runningLifetimeToken current == runningLifetimeToken running ->
-            STM.writeTVar vms $ setVMLock identifier VMisFreeToUse pool
-      Just (VMisAlreadyInUse _) ->
-        pure ()
-      Just VMisNotAlreadyInUse ->
-        pure ()
+      Just (VMisStarting current) ->
+        if current == token
+          then STM.writeTVar vms $ setVMLock identifier VMisFreeToUse pool
+          else error "Another startup owns this VM."
+      Just VMisNotStarting ->
+        error "Another actor changed the starting state."
       Nothing ->
-        pure ()
+        error "Another actor removed this VM from the pool."
 
 ignoreIOException :: IO () -> IO ()
 ignoreIOException action = action `Exception.catch` ignore

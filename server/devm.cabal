@@ -49,6 +49,7 @@ common dependencies
   build-depends:
     , base
     , containers
+    , exceptions
     , mcp-server
     , optparse-applicative
     , process
