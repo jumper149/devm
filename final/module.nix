@@ -119,8 +119,6 @@ in
 
       serviceConfig = {
         DynamicUser = true;
-        SupplementaryGroups = [ "kvm" ];
-        AmbientCapabilities = [ "CAP_NET_ADMIN" ];
         StateDirectory = "devm";
         WorkingDirectory = "%S/devm";
         Restart = "on-failure";
