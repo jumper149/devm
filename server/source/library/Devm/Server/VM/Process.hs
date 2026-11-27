@@ -8,6 +8,7 @@ import Data.Kind
 import Data.Text qualified as Text
 import Data.Unique qualified as Unique
 import Devm.Server.VM
+import GHC.Clock qualified as Clock
 import System.IO qualified as IO
 import System.IO.Error qualified as IOError
 import System.Posix.Signals qualified as Signals
@@ -17,6 +18,7 @@ startVM :: VMExecutable -> IO RunningVM
 startVM (MkVMExecutable path) = do
   lifetimeToken <- Unique.newUnique
   accessToken <- newVMAccessToken
+  lastTouched <- Clock.getMonotonicTimeNSec
   created <-
     Process.createProcess $
       (Process.proc (Text.unpack path) [])
@@ -26,7 +28,7 @@ startVM (MkVMExecutable path) = do
         }
   case created of
     (Just vmInput, Just vmOutput, Just vmError, vmProcess) ->
-      pure MkRunningVM {vmLifetimeToken = lifetimeToken, vmAccessToken = accessToken, vmProcess, vmInput, vmOutput, vmError}
+      pure MkRunningVM {vmLifetimeToken = lifetimeToken, vmAccessToken = accessToken, vmProcess, vmInput, vmOutput, vmError, vmLastTouched = lastTouched}
     _ ->
       Exception.throwIO $ IOError.userError "Could not create pipes for the VM executable."
 

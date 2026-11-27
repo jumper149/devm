@@ -10,6 +10,7 @@ import Data.Map qualified as Map
 import Data.Text qualified as Text
 import Data.UUID.Types qualified as UUID
 import Data.Unique qualified as Unique
+import Data.Word qualified as Word
 import System.IO qualified as IO
 import System.Process qualified as Process
 import System.Random qualified as Random
@@ -50,6 +51,7 @@ data RunningVM = MkRunningVM
   , vmInput :: IO.Handle
   , vmOutput :: IO.Handle
   , vmError :: IO.Handle
+  , vmLastTouched :: Word.Word64
   }
 
 runningLifetimeToken :: RunningVM -> Unique.Unique
@@ -69,6 +71,9 @@ runningOutput MkRunningVM {vmOutput} = vmOutput
 
 runningError :: RunningVM -> IO.Handle
 runningError MkRunningVM {vmError} = vmError
+
+setRunningLastTouched :: Word.Word64 -> RunningVM -> RunningVM
+setRunningLastTouched timestamp running = running {vmLastTouched = timestamp}
 
 type VMLock :: Type
 data VMLock
