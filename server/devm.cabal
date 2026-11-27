@@ -48,6 +48,7 @@ common language
 common dependencies
   build-depends:
     , base
+    , bytestring
     , containers
     , exceptions
     , mcp-server

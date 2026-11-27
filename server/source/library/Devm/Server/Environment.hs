@@ -7,9 +7,11 @@ import Control.Exception qualified as Exception
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Reader
+import Data.ByteString qualified as ByteString
 import Data.Kind
 import Data.Map qualified as Map
 import Data.Text qualified as Text
+import Data.Text.Encoding qualified as Text.Encoding
 import Devm.Server.Environment.Internal qualified as Internal
 import Devm.Server.VM
 import Devm.Server.VM.Process qualified as VMProcess
@@ -52,11 +54,28 @@ invalidAccess = do
 
 type SSHProcessResult :: Type
 data SSHProcessResult
-  = SSHFinished Exit.ExitCode String String
+  = SSHFinished Exit.ExitCode Text.Text Text.Text
   | SSHTimedOut
+  | SSHOutputTooLarge
+  | SSHOutputError Text.Text
+
+type SSHWaitResult :: Type
+data SSHWaitResult
+  = SSHWaitExited
+  | SSHWaitTimedOut
+  | SSHWaitOutputOverflow
 
 commandTerminationGracePeriod :: Int
 commandTerminationGracePeriod = 5_000_000
+
+commandOutputMax :: Int
+commandOutputMax = 1_048_576
+
+outputChunkSize :: Int
+outputChunkSize = 32_768
+
+commandPollInterval :: Int
+commandPollInterval = 10_000
 
 sshCommand :: MonadIO m => VMID -> Text.Text -> Int -> HandlerT m Text.Text
 sshCommand identifier command timeoutSeconds = do
@@ -106,18 +125,29 @@ sshCommand identifier command timeoutSeconds = do
   pure $ formatResult result
  where
   sshException :: Exception.IOException -> SSHProcessResult
-  sshException err = SSHFinished (Exit.ExitFailure 1) "" $ "Could not run ssh: " <> show err
+  sshException err = SSHFinished (Exit.ExitFailure 1) "" $ "Could not run ssh: " <> Text.pack (show err)
 
   formatResult :: SSHProcessResult -> Text.Text
   formatResult SSHTimedOut =
     "Error: Command timed out."
+  formatResult SSHOutputTooLarge =
+    "Error: Command output is too large. Maximum output is "
+      <> Text.pack (show commandOutputMax)
+      <> " bytes."
+  formatResult (SSHOutputError message) =
+    message
   formatResult (SSHFinished exitCode output errorOutput) =
-    Text.pack $
-      case exitCode of
-        Exit.ExitSuccess ->
-          output <> if null errorOutput then "" else "stderr:\n" <> errorOutput
-        Exit.ExitFailure code ->
-          "Exit code " <> show code <> "\n" <> output <> if null errorOutput then "" else "stderr:\n" <> errorOutput
+    case exitCode of
+      Exit.ExitSuccess ->
+        output <> stderrPart
+      Exit.ExitFailure code ->
+        "Exit code " <> Text.pack (show code) <> "\n" <> output <> stderrPart
+   where
+    stderrPart :: Text.Text
+    stderrPart =
+      if Text.null errorOutput
+        then ""
+        else "stderr:\n" <> errorOutput
 
 runSSHProcess :: [String] -> Int -> IO SSHProcessResult
 runSSHProcess sshArguments timeoutMicroseconds = do
@@ -130,35 +160,103 @@ runSSHProcess sshArguments timeoutMicroseconds = do
         }
   case created of
     (_, Just stdoutHandle, Just stderrHandle, processHandle) -> do
+      IO.hSetBinaryMode stdoutHandle True
+      IO.hSetBinaryMode stderrHandle True
+      remainingVar <- STM.newTVarIO commandOutputMax
+      overflowVar <- STM.newTVarIO False
       stdoutVar <- Concurrent.newEmptyMVar
       stderrVar <- Concurrent.newEmptyMVar
-      _ <- Concurrent.forkIO $ Concurrent.putMVar stdoutVar =<< readHandle stdoutHandle
-      _ <- Concurrent.forkIO $ Concurrent.putMVar stderrVar =<< readHandle stderrHandle
-      exited <- VMProcess.waitForProcessTimeout timeoutMicroseconds processHandle
-      timedOut <-
-        if exited
-          then pure False
-          else do
-            VMProcess.terminateProcessHandle commandTerminationGracePeriod "Command" processHandle
-            pure True
-      output <- MVar.takeMVar stdoutVar
-      errorOutput <- MVar.takeMVar stderrVar
+      _ <- Concurrent.forkIO $ Concurrent.putMVar stdoutVar =<< readBoundedOutput remainingVar overflowVar stdoutHandle
+      _ <- Concurrent.forkIO $ Concurrent.putMVar stderrVar =<< readBoundedOutput remainingVar overflowVar stderrHandle
+      waitResult <- waitForSSHProcess timeoutMicroseconds overflowVar processHandle
+      case waitResult of
+        SSHWaitExited ->
+          pure ()
+        SSHWaitTimedOut ->
+          VMProcess.terminateProcessHandle commandTerminationGracePeriod "Command" processHandle
+        SSHWaitOutputOverflow ->
+          VMProcess.terminateProcessHandle commandTerminationGracePeriod "Command" processHandle
+      stdoutResult <- MVar.takeMVar stdoutVar
+      stderrResult <- MVar.takeMVar stderrVar
       exitCode <- Process.waitForProcess processHandle
-      if timedOut
-        then pure SSHTimedOut
-        else pure $ SSHFinished exitCode output errorOutput
+      finalOverflow <- STM.readTVarIO overflowVar
+      if finalOverflow
+        then pure SSHOutputTooLarge
+        else case waitResult of
+          SSHWaitTimedOut ->
+            pure SSHTimedOut
+          SSHWaitOutputOverflow ->
+            pure SSHOutputTooLarge
+          SSHWaitExited ->
+            finishResult stdoutResult stderrResult exitCode
     _ ->
       Exception.throwIO $ IOError.userError "Could not create pipes for ssh."
 
-readHandle :: IO.Handle -> IO String
-readHandle handle = readAll `Exception.catch` onError
+waitForSSHProcess :: Int -> STM.TVar Bool -> Process.ProcessHandle -> IO SSHWaitResult
+waitForSSHProcess maxWait overflowVar processHandle = go 0
  where
-  readAll :: IO String
-  readAll = do
-    contents <- IO.hGetContents handle
-    _ <- Exception.evaluate (length contents)
-    pure contents
+  go :: Int -> IO SSHWaitResult
+  go elapsed = do
+    overflow <- STM.readTVarIO overflowVar
+    if overflow
+      then pure SSHWaitOutputOverflow
+      else
+        if elapsed >= maxWait
+          then pure SSHWaitTimedOut
+          else do
+            exited <- Process.getProcessExitCode processHandle
+            case exited of
+              Just _ ->
+                pure SSHWaitExited
+              Nothing -> do
+                Concurrent.threadDelay commandPollInterval
+                go (elapsed + commandPollInterval)
 
-  onError :: Exception.IOException -> IO String
+readBoundedOutput :: STM.TVar Int -> STM.TVar Bool -> IO.Handle -> IO (Either String ByteString.ByteString)
+readBoundedOutput remainingVar overflowVar handle = go [] `Exception.catch` onError
+ where
+  go :: [ByteString.ByteString] -> IO (Either String ByteString.ByteString)
+  go chunks = do
+    chunk <- ByteString.hGetSome handle outputChunkSize
+    if ByteString.null chunk
+      then pure $ Right $ ByteString.concat $ reverse chunks
+      else do
+        exceeded <- STM.atomically $ reserveOutput remainingVar overflowVar chunk
+        if exceeded
+          then pure $ Right $ ByteString.concat $ reverse chunks
+          else go (chunk : chunks)
+
+  onError :: Exception.IOException -> IO (Either String ByteString.ByteString)
   onError err =
-    pure $ "Error reading command output: " <> show err
+    pure $ Left $ "Error reading command output: " <> show err
+
+reserveOutput :: STM.TVar Int -> STM.TVar Bool -> ByteString.ByteString -> STM.STM Bool
+reserveOutput remainingVar overflowVar chunk = do
+  remaining <- STM.readTVar remainingVar
+  let chunkSize = ByteString.length chunk
+  if chunkSize <= remaining
+    then do
+      STM.writeTVar remainingVar (remaining - chunkSize)
+      pure False
+    else do
+      STM.writeTVar remainingVar 0
+      STM.writeTVar overflowVar True
+      pure True
+
+finishResult :: Either String ByteString.ByteString -> Either String ByteString.ByteString -> Exit.ExitCode -> IO SSHProcessResult
+finishResult stdoutResult stderrResult exitCode =
+  case decodeOutput stdoutResult of
+    Left err ->
+      pure $ SSHOutputError (Text.pack err)
+    Right stdout ->
+      case decodeOutput stderrResult of
+        Left err ->
+          pure $ SSHOutputError (Text.pack err)
+        Right stderr ->
+          pure $ SSHFinished exitCode stdout stderr
+
+decodeOutput :: Either String ByteString.ByteString -> Either String Text.Text
+decodeOutput (Left err) =
+  Left err
+decodeOutput (Right bytes) =
+  Right $ Text.Encoding.decodeUtf8Lenient bytes
