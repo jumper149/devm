@@ -86,7 +86,9 @@ sshCommand identifier command timeoutSeconds = do
 
     sshOptions :: [String]
     sshOptions =
-      [ "-o"
+      [ "-F"
+      , "none"
+      , "-o"
       , "HostName=" <> address
       , "-o"
       , "User=dev"
