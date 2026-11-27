@@ -55,7 +55,7 @@ invalidAccess = do
 type SSHProcessResult :: Type
 data SSHProcessResult
   = SSHFinished Exit.ExitCode Text.Text Text.Text
-  | SSHTimedOut
+  | SSHTimedOut Text.Text Text.Text
   | SSHOutputTooLarge Text.Text Text.Text
   | SSHOutputError Text.Text
 
@@ -128,8 +128,10 @@ sshCommand identifier command timeoutSeconds = do
   sshException err = SSHFinished (Exit.ExitFailure 1) "" $ "Could not run ssh: " <> Text.pack (show err)
 
   formatResult :: SSHProcessResult -> Text.Text
-  formatResult SSHTimedOut =
-    "Error: Command timed out."
+  formatResult (SSHTimedOut output errorOutput) =
+    "Error: Command timed out.\nPartial output:\n"
+      <> output
+      <> stderrPart errorOutput
   formatResult (SSHOutputTooLarge output errorOutput) =
     "Error: Command output is too large. Maximum output is "
       <> Text.pack (show commandOutputMax)
@@ -190,7 +192,7 @@ runSSHProcess sshArguments timeoutMicroseconds = do
             then pure $ SSHOutputTooLarge output errorOutput
             else case waitResult of
               SSHWaitTimedOut ->
-                pure SSHTimedOut
+                pure $ SSHTimedOut output errorOutput
               SSHWaitOutputOverflow ->
                 pure $ SSHOutputTooLarge output errorOutput
               SSHWaitExited ->
