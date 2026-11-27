@@ -15,6 +15,8 @@ data CommandLine = MkCommandLine
   , cliHttpPort :: Int
   , cliLogRequests :: Bool
   , cliLogVMs :: Bool
+  , cliCommandTimeoutDefault :: Int
+  , cliCommandTimeoutMax :: Int
   }
 
 commandLineParser :: Opt.Parser CommandLine
@@ -61,6 +63,22 @@ commandLineParser = do
     Opt.switch
       ( Opt.long "log-vms"
           <> Opt.help "Log VM startup on StdOut."
+      )
+  cliCommandTimeoutDefault <-
+    Opt.option
+      Opt.auto
+      ( Opt.long "command-timeout-default"
+          <> Opt.metavar "SECONDS"
+          <> Opt.help "Default wall-clock timeout for commands sent to VMs."
+          <> Opt.value 300
+      )
+  cliCommandTimeoutMax <-
+    Opt.option
+      Opt.auto
+      ( Opt.long "command-timeout-max"
+          <> Opt.metavar "SECONDS"
+          <> Opt.help "Maximum wall-clock timeout a command request may select."
+          <> Opt.value 3600
       )
   pure MkCommandLine {..}
 

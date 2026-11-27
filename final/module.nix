@@ -55,6 +55,22 @@ in
       '';
     };
 
+    commandTimeoutDefault = lib.mkOption {
+      type = lib.types.int;
+      default = 300;
+      description = ''
+        Default wall-clock timeout for commands sent to VMs, in seconds.
+      '';
+    };
+
+    commandTimeoutMax = lib.mkOption {
+      type = lib.types.int;
+      default = 3600;
+      description = ''
+        Maximum wall-clock timeout a command request may select, in seconds.
+      '';
+    };
+
     sshKey = lib.mkOption {
       type = lib.types.str;
       description = ''
@@ -73,6 +89,17 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = cfg.commandTimeoutDefault >= 1;
+        message = "services.devm.commandTimeoutDefault must be at least 1.";
+      }
+      {
+        assertion = cfg.commandTimeoutMax >= cfg.commandTimeoutDefault;
+        message = "services.devm.commandTimeoutMax must be at least services.devm.commandTimeoutDefault.";
+      }
+    ];
+
     systemd.services.devm = {
       description = "Devm MCP server";
       wantedBy = [ "multi-user.target" ];
@@ -91,6 +118,8 @@ in
           ++ [ "--host" cfg.httpHost ]
           ++ [ "--port" (toString cfg.httpPort) ]
           ++ [ "--ssh-key" cfg.sshKey ]
+          ++ [ "--command-timeout-default" (toString cfg.commandTimeoutDefault) ]
+          ++ [ "--command-timeout-max" (toString cfg.commandTimeoutMax) ]
           ++ lib.optionals cfg.logRequests [ "--log-requests" ]
           ++ lib.optionals cfg.logVMs [ "--log-vms" ]
         );

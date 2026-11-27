@@ -2,6 +2,7 @@
 
 module Devm.Server.Main where
 
+import Control.Monad qualified as Monad
 import Data.Map qualified as Map
 import Devm.Server.CLI
 import Devm.Server.Environment.Internal qualified as Internal
@@ -30,8 +31,14 @@ main = do
     , cliHttpPort
     , cliLogRequests = logRequests
     , cliLogVMs = logVMs
+    , cliCommandTimeoutDefault = commandTimeoutDefault
+    , cliCommandTimeoutMax = commandTimeoutMax
     } <-
     Opt.execParser commandLineParserInfo
+  Monad.when (commandTimeoutDefault < 1) $
+    error "--command-timeout-default must be at least 1 second."
+  Monad.when (commandTimeoutMax < commandTimeoutDefault) $
+    error "--command-timeout-max must be at least --command-timeout-default."
   vms <- initializeVMPool $ Map.keys executablesMap
   let httpConfig = MCP.Server.defaultHttpConfig {MCP.Server.httpHost = cliHttpHost, MCP.Server.httpPort = cliHttpPort}
   let environment = Internal.MkHandlerEnvironment {..}

@@ -55,33 +55,45 @@ terminationPollInterval = 10_000
 
 terminateRunningVM :: VMID -> RunningVM -> IO ()
 terminateRunningVM identifier running = do
-  ignoreIOException $ Process.terminateProcess (runningProcess running)
   ignoreIOException $ IO.hClose (runningInput running)
-  waitForTermination identifier (runningProcess running)
-
-waitForTermination :: VMID -> Process.ProcessHandle -> IO ()
-waitForTermination identifier processHandle = go 0
+  terminateProcessHandle terminationTimeout label (runningProcess running)
  where
-  go :: Int -> IO ()
+  label :: String
+  label = "VM " <> Text.unpack (displayVMID identifier)
+
+terminateProcessHandle :: Int -> String -> Process.ProcessHandle -> IO ()
+terminateProcessHandle escalationTimeout label processHandle = do
+  ignoreIOException $ Process.terminateProcess processHandle
+  exited <- waitForProcessTimeout escalationTimeout processHandle
+  if exited
+    then pure ()
+    else do
+      IO.putStrLn $
+        label
+          <> " did not exit within "
+          <> show (escalationTimeout `div` 1_000_000)
+          <> " seconds; sending SIGKILL."
+      mPid <- Process.getPid processHandle
+      case mPid of
+        Nothing ->
+          pure ()
+        Just pid ->
+          ignoreIOException $ Signals.signalProcess Signals.sigKILL pid
+      _ <- Process.waitForProcess processHandle
+      pure ()
+
+waitForProcessTimeout :: Int -> Process.ProcessHandle -> IO Bool
+waitForProcessTimeout maxWait processHandle = go 0
+ where
+  go :: Int -> IO Bool
   go elapsed
-    | elapsed >= terminationTimeout = do
-        IO.putStrLn $
-          "VM "
-            <> Text.unpack (displayVMID identifier)
-            <> " did not exit within 30 seconds; sending SIGKILL."
-        mPid <- Process.getPid processHandle
-        case mPid of
-          Nothing ->
-            pure ()
-          Just pid ->
-            ignoreIOException $ Signals.signalProcess Signals.sigKILL pid
-        _ <- Process.waitForProcess processHandle
-        pure ()
+    | elapsed >= maxWait =
+        pure False
     | otherwise = do
         exited <- Process.getProcessExitCode processHandle
         case exited of
           Just _ ->
-            pure ()
+            pure True
           Nothing -> do
             Concurrent.threadDelay terminationPollInterval
             go (elapsed + terminationPollInterval)

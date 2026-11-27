@@ -15,6 +15,8 @@ data HandlerEnvironment = MkHandlerEnvironment
   , sshKeyFile :: FilePath
   , logRequests :: Bool
   , logVMs :: Bool
+  , commandTimeoutDefault :: Int
+  , commandTimeoutMax :: Int
   }
 
 type HandlerT :: (Type -> Type) -> (Type -> Type)
