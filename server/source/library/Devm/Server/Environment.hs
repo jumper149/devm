@@ -163,40 +163,47 @@ runSSHProcess sshArguments timeoutMicroseconds = do
         , Process.std_err = Process.CreatePipe
         }
   case created of
-    (_, Just stdoutHandle, Just stderrHandle, processHandle) -> do
-      IO.hSetBinaryMode stdoutHandle True
-      IO.hSetBinaryMode stderrHandle True
-      remainingVar <- STM.newTVarIO commandOutputMax
-      overflowVar <- STM.newTVarIO False
-      stdoutVar <- Concurrent.newEmptyMVar
-      stderrVar <- Concurrent.newEmptyMVar
-      _ <- Concurrent.forkIO $ Concurrent.putMVar stdoutVar =<< readBoundedOutput remainingVar overflowVar stdoutHandle
-      _ <- Concurrent.forkIO $ Concurrent.putMVar stderrVar =<< readBoundedOutput remainingVar overflowVar stderrHandle
-      waitResult <- waitForSSHProcess timeoutMicroseconds overflowVar processHandle
-      case waitResult of
-        SSHWaitExited ->
-          pure ()
-        SSHWaitTimedOut ->
-          VMProcess.terminateProcessHandle commandTerminationGracePeriod "Command" processHandle
-        SSHWaitOutputOverflow ->
-          VMProcess.terminateProcessHandle commandTerminationGracePeriod "Command" processHandle
-      stdoutResult <- MVar.takeMVar stdoutVar
-      stderrResult <- MVar.takeMVar stderrVar
-      exitCode <- Process.waitForProcess processHandle
-      finalOverflow <- STM.readTVarIO overflowVar
-      case decodeOutputPair stdoutResult stderrResult of
-        Left err ->
-          pure $ SSHOutputError err
-        Right (output, errorOutput) ->
-          if finalOverflow
-            then pure $ SSHOutputTooLarge output errorOutput
-            else case waitResult of
-              SSHWaitTimedOut ->
-                pure $ SSHTimedOut output errorOutput
-              SSHWaitOutputOverflow ->
-                pure $ SSHOutputTooLarge output errorOutput
+    (_, Just stdoutHandle, Just stderrHandle, processHandle) ->
+      Exception.finally
+        ( do
+            IO.hSetBinaryMode stdoutHandle True
+            IO.hSetBinaryMode stderrHandle True
+            remainingVar <- STM.newTVarIO commandOutputMax
+            overflowVar <- STM.newTVarIO False
+            stdoutVar <- Concurrent.newEmptyMVar
+            stderrVar <- Concurrent.newEmptyMVar
+            _ <- Concurrent.forkIO $ Concurrent.putMVar stdoutVar =<< readBoundedOutput remainingVar overflowVar stdoutHandle
+            _ <- Concurrent.forkIO $ Concurrent.putMVar stderrVar =<< readBoundedOutput remainingVar overflowVar stderrHandle
+            waitResult <- waitForSSHProcess timeoutMicroseconds overflowVar processHandle
+            case waitResult of
               SSHWaitExited ->
-                pure $ SSHFinished exitCode output errorOutput
+                pure ()
+              SSHWaitTimedOut ->
+                VMProcess.terminateProcessHandle commandTerminationGracePeriod "Command" processHandle
+              SSHWaitOutputOverflow ->
+                VMProcess.terminateProcessHandle commandTerminationGracePeriod "Command" processHandle
+            stdoutResult <- MVar.takeMVar stdoutVar
+            stderrResult <- MVar.takeMVar stderrVar
+            exitCode <- Process.waitForProcess processHandle
+            finalOverflow <- STM.readTVarIO overflowVar
+            case decodeOutputPair stdoutResult stderrResult of
+              Left err ->
+                pure $ SSHOutputError err
+              Right (output, errorOutput) ->
+                if finalOverflow
+                  then pure $ SSHOutputTooLarge output errorOutput
+                  else case waitResult of
+                    SSHWaitTimedOut ->
+                      pure $ SSHTimedOut output errorOutput
+                    SSHWaitOutputOverflow ->
+                      pure $ SSHOutputTooLarge output errorOutput
+                    SSHWaitExited ->
+                      pure $ SSHFinished exitCode output errorOutput
+        )
+        ( do
+            VMProcess.ignoreIOException $ IO.hClose stdoutHandle
+            VMProcess.ignoreIOException $ IO.hClose stderrHandle
+        )
     _ ->
       Exception.throwIO $ IOError.userError "Could not create pipes for ssh."
 
@@ -229,10 +236,14 @@ readBoundedOutput remainingVar overflowVar handle = go [] `Exception.catch` onEr
     if ByteString.null chunk
       then pure $ Right $ ByteString.concat $ reverse chunks
       else do
-        exceeded <- STM.atomically $ reserveOutput remainingVar overflowVar chunk
-        if exceeded
-          then pure $ Right $ ByteString.concat $ reverse chunks
-          else go (chunk : chunks)
+        overflow <- STM.readTVarIO overflowVar
+        if overflow
+          then go chunks
+          else do
+            exceeded <- STM.atomically $ reserveOutput remainingVar overflowVar chunk
+            if exceeded
+              then go chunks
+              else go (chunk : chunks)
 
   onError :: Exception.IOException -> IO (Either String ByteString.ByteString)
   onError err =
