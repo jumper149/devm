@@ -17,6 +17,7 @@ data CommandLine = MkCommandLine
   , cliLogVMs :: Bool
   , cliCommandTimeoutDefault :: Int
   , cliCommandTimeoutMax :: Int
+  , cliStaleVMTimeout :: Int
   }
 
 commandLineParser :: Opt.Parser CommandLine
@@ -79,6 +80,14 @@ commandLineParser = do
           <> Opt.metavar "SECONDS"
           <> Opt.help "Maximum wall-clock timeout a command request may select."
           <> Opt.value 3600
+      )
+  cliStaleVMTimeout <-
+    Opt.option
+      Opt.auto
+      ( Opt.long "stale-vm-timeout"
+          <> Opt.metavar "SECONDS"
+          <> Opt.help "Destroy VMs that have not been touched for this many seconds."
+          <> Opt.value 86400
       )
   pure MkCommandLine {..}
 

@@ -71,6 +71,14 @@ in
       '';
     };
 
+    staleVMTimeout = lib.mkOption {
+      type = lib.types.int;
+      default = 86400;
+      description = ''
+        Destroy VMs that have not been touched for this many seconds.
+      '';
+    };
+
     sshKey = lib.mkOption {
       type = lib.types.str;
       description = ''
@@ -98,6 +106,10 @@ in
         assertion = cfg.commandTimeoutMax >= cfg.commandTimeoutDefault;
         message = "services.devm.commandTimeoutMax must be at least services.devm.commandTimeoutDefault.";
       }
+      {
+        assertion = cfg.staleVMTimeout >= 1;
+        message = "services.devm.staleVMTimeout must be at least 1.";
+      }
     ];
 
     systemd.services.devm = {
@@ -120,6 +132,7 @@ in
           ++ [ "--ssh-key" cfg.sshKey ]
           ++ [ "--command-timeout-default" (toString cfg.commandTimeoutDefault) ]
           ++ [ "--command-timeout-max" (toString cfg.commandTimeoutMax) ]
+          ++ [ "--stale-vm-timeout" (toString cfg.staleVMTimeout) ]
           ++ lib.optionals cfg.logRequests [ "--log-requests" ]
           ++ lib.optionals cfg.logVMs [ "--log-vms" ]
         );

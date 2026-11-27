@@ -76,6 +76,7 @@ library
     , Devm.Server.Tools.Destroy
     , Devm.Server.VM
     , Devm.Server.VM.Process
+    , Devm.Server.VM.Reaper
   hs-source-dirs: source/library
 
 executable devm-server
