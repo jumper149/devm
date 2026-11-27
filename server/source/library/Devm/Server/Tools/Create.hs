@@ -4,7 +4,6 @@ module Devm.Server.Tools.Create where
 
 import Control.Concurrent qualified as Concurrent
 import Control.Concurrent.STM qualified as STM
-import Control.Exception qualified as Exception
 import Control.Monad.Catch
 import Control.Monad.Trans.Class
 import Data.Map qualified as Map
@@ -14,8 +13,6 @@ import Devm.Server.Environment
 import Devm.Server.VM
 import Devm.Server.VM.Process qualified as VMProcess
 import MCP.Server qualified
-import System.IO qualified as IO
-import System.Process qualified as Process
 import System.Random qualified as Random
 import System.Timeout qualified as Timeout
 
@@ -115,8 +112,7 @@ continueStartup vms identifier token continue = do
 
 stopFailedVM :: STM.TVar VMPool -> VMID -> Unique -> RunningVM -> IO ()
 stopFailedVM vms identifier token running = do
-  ignoreIOException $ Process.terminateProcess (runningProcess running)
-  ignoreIOException $ IO.hClose (runningInput running)
+  VMProcess.terminateRunningVM identifier running
   STM.atomically $ do
     pool <- STM.readTVar vms
     case lookupVMLock pool identifier of
@@ -128,9 +124,3 @@ stopFailedVM vms identifier token running = do
         error "Another actor changed the starting state."
       Nothing ->
         error "Another actor removed this VM from the pool."
-
-ignoreIOException :: IO () -> IO ()
-ignoreIOException action = action `Exception.catch` ignore
- where
-  ignore :: Exception.IOException -> IO ()
-  ignore _ = pure ()
