@@ -56,7 +56,7 @@ type SSHProcessResult :: Type
 data SSHProcessResult
   = SSHFinished Exit.ExitCode Text.Text Text.Text
   | SSHTimedOut
-  | SSHOutputTooLarge
+  | SSHOutputTooLarge Text.Text Text.Text
   | SSHOutputError Text.Text
 
 type SSHWaitResult :: Type
@@ -130,24 +130,26 @@ sshCommand identifier command timeoutSeconds = do
   formatResult :: SSHProcessResult -> Text.Text
   formatResult SSHTimedOut =
     "Error: Command timed out."
-  formatResult SSHOutputTooLarge =
+  formatResult (SSHOutputTooLarge output errorOutput) =
     "Error: Command output is too large. Maximum output is "
       <> Text.pack (show commandOutputMax)
-      <> " bytes."
+      <> " bytes.\nTruncated output:\n"
+      <> output
+      <> stderrPart errorOutput
   formatResult (SSHOutputError message) =
     message
   formatResult (SSHFinished exitCode output errorOutput) =
     case exitCode of
       Exit.ExitSuccess ->
-        output <> stderrPart
+        output <> stderrPart errorOutput
       Exit.ExitFailure code ->
-        "Exit code " <> Text.pack (show code) <> "\n" <> output <> stderrPart
-   where
-    stderrPart :: Text.Text
-    stderrPart =
-      if Text.null errorOutput
-        then ""
-        else "stderr:\n" <> errorOutput
+        "Exit code " <> Text.pack (show code) <> "\n" <> output <> stderrPart errorOutput
+
+stderrPart :: Text.Text -> Text.Text
+stderrPart errorOutput =
+  if Text.null errorOutput
+    then ""
+    else "stderr:\n" <> errorOutput
 
 runSSHProcess :: [String] -> Int -> IO SSHProcessResult
 runSSHProcess sshArguments timeoutMicroseconds = do
@@ -180,15 +182,19 @@ runSSHProcess sshArguments timeoutMicroseconds = do
       stderrResult <- MVar.takeMVar stderrVar
       exitCode <- Process.waitForProcess processHandle
       finalOverflow <- STM.readTVarIO overflowVar
-      if finalOverflow
-        then pure SSHOutputTooLarge
-        else case waitResult of
-          SSHWaitTimedOut ->
-            pure SSHTimedOut
-          SSHWaitOutputOverflow ->
-            pure SSHOutputTooLarge
-          SSHWaitExited ->
-            finishResult stdoutResult stderrResult exitCode
+      case decodeOutputPair stdoutResult stderrResult of
+        Left err ->
+          pure $ SSHOutputError err
+        Right (output, errorOutput) ->
+          if finalOverflow
+            then pure $ SSHOutputTooLarge output errorOutput
+            else case waitResult of
+              SSHWaitTimedOut ->
+                pure SSHTimedOut
+              SSHWaitOutputOverflow ->
+                pure $ SSHOutputTooLarge output errorOutput
+              SSHWaitExited ->
+                pure $ SSHFinished exitCode output errorOutput
     _ ->
       Exception.throwIO $ IOError.userError "Could not create pipes for ssh."
 
@@ -243,17 +249,17 @@ reserveOutput remainingVar overflowVar chunk = do
       STM.writeTVar overflowVar True
       pure True
 
-finishResult :: Either String ByteString.ByteString -> Either String ByteString.ByteString -> Exit.ExitCode -> IO SSHProcessResult
-finishResult stdoutResult stderrResult exitCode =
+decodeOutputPair :: Either String ByteString.ByteString -> Either String ByteString.ByteString -> Either Text.Text (Text.Text, Text.Text)
+decodeOutputPair stdoutResult stderrResult =
   case decodeOutput stdoutResult of
     Left err ->
-      pure $ SSHOutputError (Text.pack err)
+      Left $ Text.pack err
     Right stdout ->
       case decodeOutput stderrResult of
         Left err ->
-          pure $ SSHOutputError (Text.pack err)
+          Left $ Text.pack err
         Right stderr ->
-          pure $ SSHFinished exitCode stdout stderr
+          Right (stdout, stderr)
 
 decodeOutput :: Either String ByteString.ByteString -> Either String Text.Text
 decodeOutput (Left err) =
