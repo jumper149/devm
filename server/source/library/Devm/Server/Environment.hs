@@ -54,6 +54,8 @@ sshCommand identifier command = do
       , "-o"
       , "User=dev"
       , "-o"
+      , "ConnectTimeout=10"
+      , "-o"
       , "StrictHostKeyChecking=no"
       , "-o"
       , "UserKnownHostsFile=/dev/null"
